@@ -1,8 +1,52 @@
 #!/usr/bin/env bash
 set -euo pipefail
+shopt -s nullglob
 
 # 1) Inputs
-CHANNEL_URL=${1:-""}      # e.g. https://www.youtube.com/c/MyChannel/videos
+CHANNEL_URL=""
+DOWNLOAD_ONLY=false
+UPLOAD_ONLY=false
+
+usage() {
+  echo "Usage: $0 [--download-only|--upload-only] <channel_url>"
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --download-only)
+      DOWNLOAD_ONLY=true
+      shift
+      ;;
+    --upload-only)
+      UPLOAD_ONLY=true
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      if [[ -z "$CHANNEL_URL" ]]; then
+        CHANNEL_URL="$1"
+      else
+        echo "Unknown argument: $1"
+        usage
+        exit 1
+      fi
+      shift
+      ;;
+  esac
+done
+
+if [[ "$DOWNLOAD_ONLY" == true && "$UPLOAD_ONLY" == true ]]; then
+  echo "Error: --download-only and --upload-only cannot be used together."
+  exit 1
+fi
+
+if [[ "$UPLOAD_ONLY" == false && -z "$CHANNEL_URL" ]]; then
+  usage
+  exit 1
+fi
 
 # Load environment variables
 if [ -f ".env" ]; then
@@ -15,9 +59,12 @@ fi
 
 # Ensure required variables are set
 : "${BASE_DIR:?BASE_DIR is not set}"
-: "${PEERTUBE_URL:?PEERTUBE_URL is not set}"
-: "${PEERTUBE_USER:?PEERTUBE_USER is not set}"
-: "${PEERTUBE_PASS:?PEERTUBE_PASS is not set}"
+
+if [[ "$DOWNLOAD_ONLY" == false ]]; then
+  : "${PEERTUBE_URL:?PEERTUBE_URL is not set}"
+  : "${PEERTUBE_USER:?PEERTUBE_USER is not set}"
+  : "${PEERTUBE_PASS:?PEERTUBE_PASS is not set}"
+fi
 
 # 2) Local dirs & archive
 DOWNLOAD_DIR="./yt_downloads"
@@ -25,46 +72,61 @@ ARCHIVE_FILE="./yt-dlp-archive.txt"
 mkdir -p "${DOWNLOAD_DIR}"
 
 # 3) (Optional) authenticate once so future 'upload' calls omit creds
-peertube-cli auth add \
-  -u "${PEERTUBE_URL}" \
-  -U "${PEERTUBE_USER}" \
-  --password "${PEERTUBE_PASS}"
+if [[ "$DOWNLOAD_ONLY" == false ]]; then
+  peertube-cli auth add \
+    -u "${PEERTUBE_URL}" \
+    -U "${PEERTUBE_USER}" \
+    --password "${PEERTUBE_PASS}"
+fi
 
 # 4) Grab every video URL from the channel
-VIDEO_URLS=$(yt-dlp --dump-json --flat-playlist "${CHANNEL_URL}" \
-              | jq -r '.url')  # list of URLs :contentReference[oaicite:2]{index=2}
+if [[ "$UPLOAD_ONLY" == false ]]; then
+  VIDEO_URLS=$(yt-dlp --dump-json --flat-playlist "${CHANNEL_URL}" \
+                | jq -r '.url')  # list of URLs
+fi
 
 # 5) Loop through each video
-for VIDEO_URL in ${VIDEO_URLS}; do
-  echo
-  echo "=== Processing ${VIDEO_URL} ==="
-
-  # 5a) Download (skip if seen before)
-  yt-dlp -ciw \
-    --download-archive "${ARCHIVE_FILE}" \
-    -o "${DOWNLOAD_DIR}/%(id)s.%(ext)s" \
-    "${VIDEO_URL}"
-
-echo "step 5b"
-
-  # 5b) Identify local file & metadata JSON
-  VIDEO_ID=$(echo "${VIDEO_URL}" | sed -n 's/.*v=\([^&]*\).*/\1/p')
-  FILE_PATH=$(find "${DOWNLOAD_DIR}" -maxdepth 1 -type f -name "${VIDEO_ID}.*" ! -name "*.info.json" | head -n 1)
-  INFO_JSON="${DOWNLOAD_DIR}/${VIDEO_ID}.info.json"
-
-  # 5c) Extract title & description
-  yt-dlp --skip-download --write-info-json \
-         -o "${DOWNLOAD_DIR}/${VIDEO_ID}.%(ext)s" \
-         "${VIDEO_URL}"
-  TITLE=$(jq -r '.title' < "${INFO_JSON}")
-  DESCRIPTION=$(jq -r '.description' < "${INFO_JSON}")
-
-  # 5d) Upload to PeerTube
+upload_video() {
+  local vid="$1"
+  local file_path info_json title description
+  file_path=$(find "${DOWNLOAD_DIR}" -maxdepth 1 -type f -name "${vid}.*" ! -name "*.info.json" | head -n 1)
+  info_json="${DOWNLOAD_DIR}/${vid}.info.json"
+  title=$(jq -r '.title' < "${info_json}")
+  description=$(jq -r '.description' < "${info_json}")
   peertube-cli upload \
-    --file "${FILE_PATH}" \
+    --file "${file_path}" \
     --url "${PEERTUBE_URL}" \
     --username "${PEERTUBE_USER}" \
     --password "${PEERTUBE_PASS}" \
-    --video-name "${TITLE}" \
-    --video-description "${DESCRIPTION}"  # :contentReference[oaicite:3]{index=3}
-done
+    --video-name "${title}" \
+    --video-description "${description}"  # :contentReference[oaicite:3]{index=3}
+}
+
+if [[ "$UPLOAD_ONLY" == true ]]; then
+  for info in "${DOWNLOAD_DIR}"/*.info.json; do
+    vid=$(basename "${info}" .info.json)
+    upload_video "${vid}"
+  done
+else
+  for VIDEO_URL in ${VIDEO_URLS}; do
+    echo
+    echo "=== Processing ${VIDEO_URL} ==="
+
+    VIDEO_ID=$(echo "${VIDEO_URL}" | sed -n 's/.*v=\([^&]*\).*/\1/p')
+
+    # 5a) Download (skip if seen before)
+    yt-dlp -ciw \
+      --download-archive "${ARCHIVE_FILE}" \
+      -o "${DOWNLOAD_DIR}/%(id)s.%(ext)s" \
+      "${VIDEO_URL}"
+
+    # 5b) Save metadata JSON
+    yt-dlp --skip-download --write-info-json \
+           -o "${DOWNLOAD_DIR}/${VIDEO_ID}.%(ext)s" \
+           "${VIDEO_URL}"
+
+    if [[ "$DOWNLOAD_ONLY" == false ]]; then
+      upload_video "${VIDEO_ID}"
+    fi
+  done
+fi
