@@ -69,7 +69,9 @@ fi
 # 2) Local dirs & archive
 DOWNLOAD_DIR="./yt_downloads"
 ARCHIVE_FILE="./yt-dlp-archive.txt"
+UPLOAD_ARCHIVE_FILE="./uploaded.txt"
 mkdir -p "${DOWNLOAD_DIR}"
+touch "${UPLOAD_ARCHIVE_FILE}"
 
 # 3) (Optional) authenticate once so future 'upload' calls omit creds
 if [[ "$DOWNLOAD_ONLY" == false ]]; then
@@ -92,6 +94,10 @@ fi
 # 5) Loop through each video
 upload_video() {
   local vid="$1"
+  if grep -Fxq "$vid" "${UPLOAD_ARCHIVE_FILE}"; then
+    echo "Skipping already uploaded video ${vid}"
+    return
+  fi
   local file_path info_json title description
   file_path=$(find "${DOWNLOAD_DIR}" -maxdepth 1 -type f -name "${vid}.*" ! -name "*.info.json" | head -n 1)
   info_json="${DOWNLOAD_DIR}/${vid}.info.json"
@@ -104,6 +110,7 @@ upload_video() {
     --password "${PEERTUBE_PASS}" \
     --video-name "${title}" \
     --video-description "${description}"  # :contentReference[oaicite:3]{index=3}
+  echo "${vid}" >> "${UPLOAD_ARCHIVE_FILE}"
 }
 
 if [[ "$UPLOAD_ONLY" == true ]]; then
