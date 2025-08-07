@@ -38,7 +38,6 @@ if [[ "${DOWNLOAD_ONLY}" == true && "${UPLOAD_ONLY}" == true ]]; then
   exit 1
 fi
 
-BASE_DIR="" # Absolute path for directory where video files and metadata are stored
 PEERTUBE_URL="" #URL of peertube instance
 PEERTUBE_USER=""      # your PeerTube login
 PEERTUBE_PASS=""  # your PeerTube password
@@ -56,16 +55,15 @@ peertube-cli auth add \
 
 # 4) Grab every video URL from the channel
 VIDEO_URLS=$(yt-dlp --dump-json --flat-playlist "${CHANNEL_URL}" \
-              | jq -r '.url')  # list of URLs :contentReference[oaicite:2]{index=2}
+              | jq -r '.url')  # list of URLs
 
 # 5) Loop through each video
 for VIDEO_URL in ${VIDEO_URLS}; do
   echo
   echo "=== Processing ${VIDEO_URL} ==="
 
-  # 5a) Identify local file & metadata JSON
+  # 5a) Identify metadata JSON
   VIDEO_ID=$(echo "${VIDEO_URL}" | sed -n 's/.*v=\([^&]*\).*/\1/p')
-  FILE_PATH="${BASE_DIR}/${VIDEO_ID}.webm"
   INFO_JSON="${DOWNLOAD_DIR}/${VIDEO_ID}.info.json"
 
   # 5b) Download (skip if seen before)
@@ -83,6 +81,8 @@ for VIDEO_URL in ${VIDEO_URLS}; do
            "${VIDEO_URL}"
     TITLE=$(jq -r '.title' < "${INFO_JSON}")
     DESCRIPTION=$(jq -r '.description' < "${INFO_JSON}")
+    EXT=$(jq -r '.ext' < "${INFO_JSON}")
+    FILE_PATH="${DOWNLOAD_DIR}/${VIDEO_ID}.${EXT}"
 
     # 5d) Upload to PeerTube
     peertube-cli upload \
@@ -91,6 +91,6 @@ for VIDEO_URL in ${VIDEO_URLS}; do
       --username "${PEERTUBE_USER}" \
       --password "${PEERTUBE_PASS}" \
       --video-name "${TITLE}" \
-      --video-description "${DESCRIPTION}"  # :contentReference[oaicite:3]{index=3}
+      --video-description "${DESCRIPTION}"
   fi
 done
