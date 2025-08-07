@@ -38,7 +38,7 @@ echo "step 5b"
 
   # 5b) Identify local file & metadata JSON
   VIDEO_ID=$(echo "${VIDEO_URL}" | sed -n 's/.*v=\([^&]*\).*/\1/p')
-  FILE_PATH="${BASE_DIR}/${VIDEO_ID}.webm"
+  FILE_PATH=$(find "${DOWNLOAD_DIR}" -maxdepth 1 -type f -name "${VIDEO_ID}.*" ! -name "*.info.json" | head -n 1)
   INFO_JSON="${DOWNLOAD_DIR}/${VIDEO_ID}.info.json"
 
   # 5c) Extract title & description
