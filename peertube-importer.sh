@@ -81,8 +81,12 @@ fi
 
 # 4) Grab every video URL from the channel
 if [[ "$UPLOAD_ONLY" == false ]]; then
-  VIDEO_URLS=$(yt-dlp --dump-json --flat-playlist "${CHANNEL_URL}" \
-                | jq -r '.url')  # list of URLs
+  # Read all video URLs into an array. Quoting each entry avoids the shell
+  # treating characters like '&' as control operators during iteration.
+  mapfile -t VIDEO_URLS < <(yt-dlp --dump-json --flat-playlist "${CHANNEL_URL}" \
+    | jq -r '.url')
+else
+  VIDEO_URLS=()
 fi
 
 # 5) Loop through each video
@@ -108,7 +112,7 @@ if [[ "$UPLOAD_ONLY" == true ]]; then
     upload_video "${vid}"
   done
 else
-  for VIDEO_URL in ${VIDEO_URLS}; do
+  for VIDEO_URL in "${VIDEO_URLS[@]}"; do
     echo
     echo "=== Processing ${VIDEO_URL} ==="
 
