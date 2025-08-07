@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+shopt -s nullglob
 
 # 1) Inputs
 # Parse command line arguments. The first non-flag argument is treated as the
@@ -28,8 +29,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "${CHANNEL_URL}" ]]; then
-  echo "Usage: $0 [--download-only|--upload-only] <channel_url>" >&2
+if [[ -z "${CHANNEL_URL}" && "${UPLOAD_ONLY}" == false ]]; then
+  echo "Usage: $0 [--download-only|--upload-only] [<channel_url>]" >&2
   exit 1
 fi
 
@@ -48,43 +49,30 @@ ARCHIVE_FILE="./yt-dlp-archive.txt"
 mkdir -p "${DOWNLOAD_DIR}"
 
 # 3) (Optional) authenticate once so future 'upload' calls omit creds
-peertube-cli auth add \
-  -u "${PEERTUBE_URL}" \
-  -U "${PEERTUBE_USER}" \
-  --password "${PEERTUBE_PASS}"
+if [[ "${DOWNLOAD_ONLY}" == false ]]; then
+  peertube-cli auth add \
+    -u "${PEERTUBE_URL}" \
+    -U "${PEERTUBE_USER}" \
+    --password "${PEERTUBE_PASS}"
+fi
 
 # 4) Grab every video URL from the channel
-VIDEO_URLS=$(yt-dlp --dump-json --flat-playlist "${CHANNEL_URL}" \
-              | jq -r '.url')  # list of URLs
+if [[ "${UPLOAD_ONLY}" == false ]]; then
+  VIDEO_URLS=$(yt-dlp --dump-json --flat-playlist "${CHANNEL_URL}" \
+                | jq -r '.url')  # list of URLs
+fi
 
-# 5) Loop through each video
-for VIDEO_URL in ${VIDEO_URLS}; do
-  echo
-  echo "=== Processing ${VIDEO_URL} ==="
-
-  # 5a) Identify metadata JSON
-  VIDEO_ID=$(echo "${VIDEO_URL}" | sed -n 's/.*v=\([^&]*\).*/\1/p')
-  INFO_JSON="${DOWNLOAD_DIR}/${VIDEO_ID}.info.json"
-
-  # 5b) Download (skip if seen before)
-  if [[ "${UPLOAD_ONLY}" == false ]]; then
-    yt-dlp -ciw \
-      --download-archive "${ARCHIVE_FILE}" \
-      -o "${DOWNLOAD_DIR}/%(id)s.%(ext)s" \
-      "${VIDEO_URL}"
-  fi
-
-  # 5c) Extract title & description and upload
-  if [[ "${DOWNLOAD_ONLY}" == false ]]; then
-    yt-dlp --skip-download --write-info-json \
-           -o "${DOWNLOAD_DIR}/${VIDEO_ID}.%(ext)s" \
-           "${VIDEO_URL}"
+# 5) Loop through videos
+if [[ "${UPLOAD_ONLY}" == true ]]; then
+  for INFO_JSON in "${DOWNLOAD_DIR}"/*.info.json; do
+    VIDEO_ID=$(basename "${INFO_JSON}" .info.json)
     TITLE=$(jq -r '.title' < "${INFO_JSON}")
     DESCRIPTION=$(jq -r '.description' < "${INFO_JSON}")
     EXT=$(jq -r '.ext' < "${INFO_JSON}")
     FILE_PATH="${DOWNLOAD_DIR}/${VIDEO_ID}.${EXT}"
 
-    # 5d) Upload to PeerTube
+    echo
+    echo "=== Uploading ${VIDEO_ID} ==="
     peertube-cli upload \
       --file "${FILE_PATH}" \
       --url "${PEERTUBE_URL}" \
@@ -92,5 +80,34 @@ for VIDEO_URL in ${VIDEO_URLS}; do
       --password "${PEERTUBE_PASS}" \
       --video-name "${TITLE}" \
       --video-description "${DESCRIPTION}"
-  fi
-done
+  done
+else
+  for VIDEO_URL in ${VIDEO_URLS}; do
+    echo
+    echo "=== Processing ${VIDEO_URL} ==="
+
+    VIDEO_ID=$(echo "${VIDEO_URL}" | sed -n 's/.*v=\([^&]*\).*/\1/p')
+    INFO_JSON="${DOWNLOAD_DIR}/${VIDEO_ID}.info.json"
+
+    yt-dlp -ciw \
+      --download-archive "${ARCHIVE_FILE}" \
+      --write-info-json \
+      -o "${DOWNLOAD_DIR}/%(id)s.%(ext)s" \
+      "${VIDEO_URL}"
+
+    if [[ "${DOWNLOAD_ONLY}" == false ]]; then
+      TITLE=$(jq -r '.title' < "${INFO_JSON}")
+      DESCRIPTION=$(jq -r '.description' < "${INFO_JSON}")
+      EXT=$(jq -r '.ext' < "${INFO_JSON}")
+      FILE_PATH="${DOWNLOAD_DIR}/${VIDEO_ID}.${EXT}"
+
+      peertube-cli upload \
+        --file "${FILE_PATH}" \
+        --url "${PEERTUBE_URL}" \
+        --username "${PEERTUBE_USER}" \
+        --password "${PEERTUBE_PASS}" \
+        --video-name "${TITLE}" \
+        --video-description "${DESCRIPTION}"
+    fi
+  done
+fi
