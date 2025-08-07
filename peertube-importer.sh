@@ -3,10 +3,21 @@ set -euo pipefail
 
 # 1) Inputs
 CHANNEL_URL=${1:-""}      # e.g. https://www.youtube.com/c/MyChannel/videos
-BASE_DIR="" # Absolute path for directory where video files and metadata are stored
-PEERTUBE_URL="" #URL of peertube instance
-PEERTUBE_USER=""      # your PeerTube login
-PEERTUBE_PASS=""  # your PeerTube password
+
+# Load environment variables
+if [ -f ".env" ]; then
+  # shellcheck disable=SC1091
+  source ".env"
+else
+  echo "Error: .env file not found. Create one based on sample.env."
+  exit 1
+fi
+
+# Ensure required variables are set
+: "${BASE_DIR:?BASE_DIR is not set}"
+: "${PEERTUBE_URL:?PEERTUBE_URL is not set}"
+: "${PEERTUBE_USER:?PEERTUBE_USER is not set}"
+: "${PEERTUBE_PASS:?PEERTUBE_PASS is not set}"
 
 # 2) Local dirs & archive
 DOWNLOAD_DIR="./yt_downloads"
