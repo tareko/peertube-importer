@@ -71,7 +71,7 @@ DOWNLOAD_DIR="./yt_downloads"
 ARCHIVE_FILE="./yt-dlp-archive.txt"
 UPLOAD_ARCHIVE_FILE="./uploaded.txt"
 mkdir -p "${DOWNLOAD_DIR}"
-touch "${UPLOAD_ARCHIVE_FILE}"
+touch "${ARCHIVE_FILE}" "${UPLOAD_ARCHIVE_FILE}"
 
 # 3) (Optional) authenticate once so future 'upload' calls omit creds
 if [[ "$DOWNLOAD_ONLY" == false ]]; then
@@ -114,8 +114,13 @@ upload_video() {
 }
 
 if [[ "$UPLOAD_ONLY" == true ]]; then
-  for info in "${DOWNLOAD_DIR}"/*.info.json; do
-    vid=$(basename "${info}" .info.json)
+  if [[ ! -f "${ARCHIVE_FILE}" ]]; then
+    echo "Error: archive file ${ARCHIVE_FILE} not found."
+    exit 1
+  fi
+  # Extract video IDs from lines like "youtube <id>" in the archive
+  mapfile -t ARCHIVE_VIDS < <(awk '$1 == "youtube" {print $2}' "${ARCHIVE_FILE}")
+  for vid in "${ARCHIVE_VIDS[@]}"; do
     upload_video "${vid}"
   done
 else
