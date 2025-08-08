@@ -100,6 +100,7 @@ upload_video() {
   fi
   local file_path info_json title description
   file_path=$(find "${DOWNLOAD_DIR}" -maxdepth 1 -type f -name "${vid}.*" ! -name "*.info.json" | head -n 1)
+  file_path=$(realpath "${file_path}")
   info_json="${DOWNLOAD_DIR}/${vid}.info.json"
   title=$(jq -r '.title' < "${info_json}")
   description=$(jq -r '.description' < "${info_json}")
