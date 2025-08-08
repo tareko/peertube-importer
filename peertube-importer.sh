@@ -104,6 +104,7 @@ upload_video() {
   info_json="${DOWNLOAD_DIR}/${vid}.info.json"
   title=$(jq -r '.title' < "${info_json}")
   description=$(jq -r '.description' < "${info_json}")
+  echo "Uploading ${title} (YouTube ID: ${vid})"
   peertube-cli upload \
     --file "${file_path}" \
     --url "${PEERTUBE_URL}" \
