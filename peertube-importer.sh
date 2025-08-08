@@ -98,20 +98,34 @@ upload_video() {
     echo "Skipping already uploaded video ${vid}"
     return
   fi
-  local file_path info_json title description
-  file_path=$(find "${DOWNLOAD_DIR}" -maxdepth 1 -type f -name "${vid}.*" ! -name "*.info.json" | head -n 1)
+  local file_path thumb_path info_json title description
+  file_path=$(find "${DOWNLOAD_DIR}" -maxdepth 1 -type f -name "${vid}.*" \
+    ! -name "*.info.json" ! -iname "*.jpg" ! -iname "*.jpeg" \
+    ! -iname "*.png" ! -iname "*.webp" | head -n 1)
   file_path=$(realpath "${file_path}")
+  thumb_path=$(find "${DOWNLOAD_DIR}" -maxdepth 1 -type f \
+    \( -iname "${vid}.jpg" -o -iname "${vid}.jpeg" -o -iname "${vid}.png" \
+       -o -iname "${vid}.webp" \) | head -n 1 || true)
+  if [[ -n "${thumb_path}" ]]; then
+    thumb_path=$(realpath "${thumb_path}")
+  fi
   info_json="${DOWNLOAD_DIR}/${vid}.info.json"
   title=$(jq -r '.title' < "${info_json}")
   description=$(jq -r '.description' < "${info_json}")
   echo "Uploading ${title} (YouTube ID: ${vid})"
-  peertube-cli upload \
-    --file "${file_path}" \
-    --url "${PEERTUBE_URL}" \
-    --username "${PEERTUBE_USER}" \
-    --password "${PEERTUBE_PASS}" \
-    --video-name "${title}" \
-    --video-description "${description}"  # :contentReference[oaicite:3]{index=3}
+  upload_args=(
+    peertube-cli upload
+    --file "${file_path}"
+    --url "${PEERTUBE_URL}"
+    --username "${PEERTUBE_USER}"
+    --password "${PEERTUBE_PASS}"
+    --video-name "${title}"
+    --video-description "${description}"
+  )
+  if [[ -n "${thumb_path}" ]]; then
+    upload_args+=(--thumbnail-file "${thumb_path}")
+  fi
+  "${upload_args[@]}"
   echo "${vid}" >> "${UPLOAD_ARCHIVE_FILE}"
 }
 
@@ -135,11 +149,12 @@ else
     # 5a) Download (skip if seen before)
     yt-dlp -ciw \
       --download-archive "${ARCHIVE_FILE}" \
+      --write-thumbnail \
       -o "${DOWNLOAD_DIR}/%(id)s.%(ext)s" \
       "${VIDEO_URL}"
 
     # 5b) Save metadata JSON
-    yt-dlp --skip-download --write-info-json \
+    yt-dlp --skip-download --write-info-json --write-thumbnail \
            -o "${DOWNLOAD_DIR}/${VIDEO_ID}.%(ext)s" \
            "${VIDEO_URL}"
 
