@@ -171,7 +171,7 @@ upload_video() {
     echo "Skipping already uploaded video ${vid}"
     return
   fi
-  local file_path thumb_path info_json title description
+  local file_path thumb_path info_json title description upload_date published_at
   file_path=$(find "${DOWNLOAD_DIR}" -maxdepth 1 -type f -name "${vid}.*" \
     ! -name "*.info.json" ! -iname "*.jpg" ! -iname "*.jpeg" \
     ! -iname "*.png" ! -iname "*.webp" | head -n 1)
@@ -185,6 +185,7 @@ upload_video() {
   info_json="${DOWNLOAD_DIR}/${vid}.info.json"
   title=$(jq -r '.title' < "${info_json}")
   description=$(jq -r '.description' < "${info_json}")
+  upload_date=$(jq -r '.upload_date // empty' < "${info_json}")
   echo "Uploading ${title} (YouTube ID: ${vid})"
   upload_args=(
     peertube-cli upload
@@ -198,6 +199,11 @@ upload_video() {
   )
   if [[ -n "${thumb_path}" ]]; then
     upload_args+=(--thumbnail-file "${thumb_path}")
+  fi
+  if [[ "${MATCH_UPLOAD_DATE:-false}" == true && -n "${upload_date}" ]]; then
+    if published_at=$(date -d "${upload_date}" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null); then
+      upload_args+=(--published-at "${published_at}")
+    fi
   fi
   upload_json=$("${upload_args[@]}")
   echo "${upload_json}"
