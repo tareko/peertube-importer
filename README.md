@@ -17,9 +17,11 @@ Uploaded video IDs are tracked in `uploaded.txt`. Videos listed in this file
 are skipped on subsequent runs to avoid re-uploading.
 
 Each successful upload is also recorded in `uploaded-map.txt` as a mapping
-between the YouTube video ID and the corresponding PeerTube video ID. This
-file can be used later to perform actions like setting a new thumbnail for a
-specific upload.
+between the YouTube video ID and the corresponding PeerTube video ID. When a
+video already appears in this mapping, the script skips re-uploading and
+instead compares the stored title, description, and thumbnail with the current
+PeerTube metadata. Any differences are synchronized so existing uploads stay
+up to date.
 
 ## Configuration
 Copy `sample.env` to `.env` and set `BASE_DIR`, `PEERTUBE_URL`, `PEERTUBE_USER`
