@@ -132,9 +132,15 @@ sync_metadata() {
   fi
   remote_json=$(peertube-cli video get --id "${peertube_id}" --url "${PEERTUBE_URL}" \
     --username "${PEERTUBE_USER}" --password "${PEERTUBE_PASS}" 2>/dev/null || true)
-  remote_title=$(jq -r '.name // .title // empty' <<<"${remote_json}")
-  remote_description=$(jq -r '.description // empty' <<<"${remote_json}")
-  remote_thumb=$(jq -r '.thumbnailPath // .thumbnailUrl // empty' <<<"${remote_json}")
+  if [[ -n "${remote_json}" ]]; then
+    remote_title=$(jq -r '.name // .title // empty' <<<"${remote_json}" 2>/dev/null || true)
+    remote_description=$(jq -r '.description // empty' <<<"${remote_json}" 2>/dev/null || true)
+    remote_thumb=$(jq -r '.thumbnailPath // .thumbnailUrl // empty' <<<"${remote_json}" 2>/dev/null || true)
+  else
+    remote_title=""
+    remote_description=""
+    remote_thumb=""
+  fi
 
   update_args=(
     peertube-cli video update
@@ -153,12 +159,17 @@ sync_metadata() {
     update=true
   fi
   if [[ -n "${thumb_path}" ]]; then
-    local local_hash remote_hash=""
+    local local_hash remote_hash="" remote_thumb_url
     local_hash=$(sha256sum "${thumb_path}" | awk '{print $1}')
     if [[ -n "${remote_thumb}" ]]; then
-      remote_hash=$(curl -fsSL "${PEERTUBE_URL}${remote_thumb}" | sha256sum | awk '{print $1}' || true)
+      if [[ "${remote_thumb}" != http* ]]; then
+        remote_thumb_url="${PEERTUBE_URL}${remote_thumb}"
+      else
+        remote_thumb_url="${remote_thumb}"
+      fi
+      remote_hash=$(curl -fsSL "${remote_thumb_url}" | sha256sum | awk '{print $1}' || true)
     fi
-    if [[ "${local_hash}" != "${remote_hash}" ]]; then
+    if [[ -z "${remote_hash}" || "${local_hash}" != "${remote_hash}" ]]; then
       update_args+=(--thumbnail "${thumb_path}")
       update=true
     fi
@@ -171,10 +182,32 @@ sync_metadata() {
   fi
 }
 
+# Try to find an existing PeerTube video ID by matching the title
+find_existing_id() {
+  local vid="$1" info_json title encoded_title search_json
+  info_json="${DOWNLOAD_DIR}/${vid}.info.json"
+  if [[ ! -f "${info_json}" ]]; then
+    return
+  fi
+  title=$(jq -r '.title // empty' < "${info_json}" 2>/dev/null || true)
+  if [[ -z "${title}" ]]; then
+    return
+  fi
+  encoded_title=$(jq -rn --arg x "${title}" '$x|@uri')
+  search_json=$(curl -s "${PEERTUBE_URL}/api/v1/search/videos?search=${encoded_title}" 2>/dev/null || true)
+  jq -r --arg t "${title}" '.data[] | select(.name == $t) | (.uuid // .shortUUID // (.id|tostring))' <<<"${search_json}" 2>/dev/null | head -n 1
+}
+
 upload_video() {
   local vid="$1"
   local existing_id
   existing_id=$(awk -v v="$vid" '$1==v {print $2}' "${UPLOAD_MAP_FILE}" || true)
+  if [[ -z "${existing_id}" ]]; then
+    existing_id=$(find_existing_id "${vid}" || true)
+    if [[ -n "${existing_id}" ]]; then
+      echo "${vid} ${existing_id}" >> "${UPLOAD_MAP_FILE}"
+    fi
+  fi
   if [[ -n "${existing_id}" ]]; then
     echo "Video ${vid} already uploaded as ${existing_id}, syncing metadata"
     sync_metadata "${vid}" "${existing_id}"
@@ -184,7 +217,7 @@ upload_video() {
     return
   fi
   if grep -Fxq "$vid" "${UPLOAD_ARCHIVE_FILE}"; then
-    echo "Skipping already uploaded video ${vid}"
+    echo "Skipping already uploaded video ${vid} (no PeerTube id found)"
     return
   fi
   local file_path thumb_path info_json title description upload_date published_at
