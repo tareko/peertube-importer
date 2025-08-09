@@ -114,7 +114,7 @@ sync_metadata() {
   if [[ -n "${thumb_path}" ]]; then
     thumb_path=$(realpath "${thumb_path}")
   fi
-  remote_json=$(peertube-cli video get --id "${peertube_id}" --url "${PEERTUBE_URL}" \
+  remote_json=$(peertube-cli video-get --id "${peertube_id}" --url "${PEERTUBE_URL}" \
     --username "${PEERTUBE_USER}" --password "${PEERTUBE_PASS}" 2>/dev/null || true)
   if [[ -n "${remote_json}" ]]; then
     remote_title=$(jq -r '.name // .title // empty' <<<"${remote_json}" 2>/dev/null || true)
@@ -127,7 +127,7 @@ sync_metadata() {
   fi
 
   update_args=(
-    peertube-cli video update
+    peertube-cli video-update
     --id "${peertube_id}"
     --url "${PEERTUBE_URL}"
     --username "${PEERTUBE_USER}"
