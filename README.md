@@ -40,6 +40,6 @@ Copy `sample.env` to `.env` and set `BASE_DIR`, `PEERTUBE_URL`, `PEERTUBE_USER`
 and `PEERTUBE_PASS` before running the script. Set
 `USE_FIREFOX_COOKIES=true` if yt-dlp should use Firefox browser cookies for
 authenticated downloads. Set `MATCH_UPLOAD_DATE=true` to make the PeerTube
-publication date match the original YouTube upload date (requires administrator
-access on the PeerTube instance). The PeerTube variables are only required when
-uploading.
+publication date match the original YouTube upload date using the REST API
+(requires administrator access on the PeerTube instance). The PeerTube variables
+are only required when uploading.

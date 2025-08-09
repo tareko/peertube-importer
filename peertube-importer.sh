@@ -88,6 +88,23 @@ if [[ "$DOWNLOAD_ONLY" == false ]]; then
     --password "${PEERTUBE_PASS}"
 fi
 
+# Retrieve an API token if we'll need to set publish dates via the REST API
+PEERTUBE_TOKEN=""
+if [[ "$DOWNLOAD_ONLY" == false && "${MATCH_UPLOAD_DATE:-false}" == true ]]; then
+  oauth_client=$(curl -s "${PEERTUBE_URL}/api/v1/oauth-clients/local" || true)
+  client_id=$(jq -r '.client_id // .clientId // empty' <<<"${oauth_client}")
+  client_secret=$(jq -r '.client_secret // .clientSecret // empty' <<<"${oauth_client}")
+  if [[ -n "${client_id}" ]]; then
+    token_payload=$(jq -n --arg client_id "${client_id}" --arg client_secret "${client_secret}" \
+      --arg username "${PEERTUBE_USER}" --arg password "${PEERTUBE_PASS}" \
+      '{client_id:$client_id,client_secret:$client_secret,grant_type:"password",username:$username,password:$password}')
+    PEERTUBE_TOKEN=$(curl -s -X POST "${PEERTUBE_URL}/api/v1/users/token" \
+      -H 'Content-Type: application/json' \
+      -d "${token_payload}" \
+      | jq -r '.access_token // empty' || true)
+  fi
+fi
+
 # 4) Grab every video URL from the channel
 if [[ "$UPLOAD_ONLY" == false ]]; then
   # Read all video URLs into an array. Quoting each entry avoids the shell
@@ -199,13 +216,18 @@ upload_video() {
     upload_args+=(--thumbnail "${thumb_path}")
   fi
   if [[ "${MATCH_UPLOAD_DATE:-false}" == true && -n "${upload_date}" ]]; then
-    if published_at=$(date -d "${upload_date}" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null); then
-      upload_args+=(--published-at "${published_at}")
-    fi
+    published_at=$(date -d "${upload_date}" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || true)
   fi
   upload_json=$("${upload_args[@]}")
   echo "${upload_json}"
   peertube_id=$(jq -r '.video.uuid // .video.shortUUID // .video.id // empty' <<<"${upload_json}" 2>/dev/null || true)
+  if [[ -n "${peertube_id}" && -n "${published_at}" && -n "${PEERTUBE_TOKEN}" ]]; then
+    echo "Setting publish date for ${vid} to ${published_at} via REST API"
+    curl -s -X PATCH "${PEERTUBE_URL}/api/v1/videos/${peertube_id}" \
+      -H "Authorization: Bearer ${PEERTUBE_TOKEN}" \
+      -H 'Content-Type: application/json' \
+      -d "{\"publishedAt\":\"${published_at}\"}" >/dev/null || true
+  fi
   if [[ -n "${peertube_id}" ]]; then
     echo "${vid} ${peertube_id}" >> "${UPLOAD_MAP_FILE}"
   fi
