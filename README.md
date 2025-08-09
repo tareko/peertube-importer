@@ -1,6 +1,9 @@
 # peertube-importer
 Import videos from Youtube to Peertube using yt-dlp and peertube-cli.
 
+# Requirements
+* `pip install psycopg2`
+
 ## Usage
 
 ```
