@@ -16,6 +16,11 @@ script downloads it and sets it on the PeerTube upload.
 Uploaded video IDs are tracked in `uploaded.txt`. Videos listed in this file
 are skipped on subsequent runs to avoid re-uploading.
 
+Each successful upload is also recorded in `uploaded-map.txt` as a mapping
+between the YouTube video ID and the corresponding PeerTube video ID. This
+file can be used later to perform actions like setting a new thumbnail for a
+specific upload.
+
 ## Configuration
 Copy `sample.env` to `.env` and set `BASE_DIR`, `PEERTUBE_URL`, `PEERTUBE_USER`
 and `PEERTUBE_PASS` before running the script. Set
