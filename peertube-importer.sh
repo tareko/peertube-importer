@@ -142,7 +142,7 @@ sync_metadata() {
       remote_hash=$(curl -fsSL "${PEERTUBE_URL}${remote_thumb}" | sha256sum | awk '{print $1}' || true)
     fi
     if [[ "${local_hash}" != "${remote_hash}" ]]; then
-      update_args+=(--thumbnail-file "${thumb_path}")
+      update_args+=(--thumbnail "${thumb_path}")
       update=true
     fi
   fi
@@ -196,7 +196,7 @@ upload_video() {
     --video-description "${description}"
   )
   if [[ -n "${thumb_path}" ]]; then
-    upload_args+=(--thumbnail-file "${thumb_path}")
+    upload_args+=(--thumbnail "${thumb_path}")
   fi
   if [[ "${MATCH_UPLOAD_DATE:-false}" == true && -n "${upload_date}" ]]; then
     if published_at=$(date -d "${upload_date}" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null); then
