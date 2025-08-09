@@ -43,9 +43,10 @@ Copy `sample.env` to `.env` and set `BASE_DIR`, `PEERTUBE_URL`, `PEERTUBE_USER`
 and `PEERTUBE_PASS` before running the script. Set
 `USE_FIREFOX_COOKIES=true` if yt-dlp should use Firefox browser cookies for
 authenticated downloads. The PeerTube variables are only required when
-uploading. `set_publish_date.py` uses the standard PostgreSQL environment
-variables (`PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`) to connect
-directly to the PeerTube database and update publication dates.
+uploading. `set_publish_date.py` reads PostgreSQL connection settings from the
+`.env` file or the standard environment variables (`PGHOST`, `PGPORT`,
+`PGDATABASE`, `PGUSER`, `PGPASSWORD`) to connect directly to the PeerTube
+database and update publication dates.
 
 ## Setting publication dates
 

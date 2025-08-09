@@ -6,7 +6,8 @@ IDs, looks up the original YouTube upload dates from
 `yt_downloads/<youtube_id>.info.json`, and updates the `published_at` column in
 the PeerTube `video` table accordingly. Connection parameters are taken from the
 standard PostgreSQL environment variables (`PGHOST`, `PGPORT`, `PGDATABASE`,
-`PGUSER`, `PGPASSWORD`).
+`PGUSER`, `PGPASSWORD`). If present, variables defined in a local `.env` file
+are loaded before falling back to the environment.
 """
 
 from __future__ import annotations
@@ -20,6 +21,21 @@ import psycopg2
 
 DOWNLOAD_DIR = pathlib.Path("./yt_downloads")
 MAP_FILE = pathlib.Path("./uploaded-map.txt")
+
+
+def load_env(path: str = ".env") -> None:
+    """Load simple KEY=VALUE lines from a .env file into os.environ."""
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    key, val = line.split("=", 1)
+                    os.environ.setdefault(key.strip(), val.strip().strip("'\""))
+    except FileNotFoundError:
+        pass
 
 
 def read_upload_date(yt_id: str) -> datetime | None:
@@ -43,6 +59,7 @@ def read_upload_date(yt_id: str) -> datetime | None:
 
 
 def main() -> None:
+    load_env()
     conn = psycopg2.connect(
         host=os.getenv("PGHOST", "localhost"),
         port=os.getenv("PGPORT", "5432"),
