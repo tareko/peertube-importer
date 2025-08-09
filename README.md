@@ -21,6 +21,18 @@ between the YouTube video ID and the corresponding PeerTube video ID. This
 file can be used later to perform actions like setting a new thumbnail for a
 specific upload.
 
+## Mapping existing PeerTube videos
+
+If videos already exist on the PeerTube instance, `match_peertube_videos.py`
+can attempt to link them with the downloaded YouTube files. The script reads
+metadata from `yt_downloads/*.info.json`, queries the configured PeerTube
+server and appends any matches to `uploaded-map.txt` as `<youtube_id>
+<peertube_id>` pairs.
+
+```bash
+./match_peertube_videos.py
+```
+
 ## Configuration
 Copy `sample.env` to `.env` and set `BASE_DIR`, `PEERTUBE_URL`, `PEERTUBE_USER`
 and `PEERTUBE_PASS` before running the script. Set
