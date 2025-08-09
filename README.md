@@ -39,7 +39,17 @@ server and appends any matches to `uploaded-map.txt` as `<youtube_id>
 Copy `sample.env` to `.env` and set `BASE_DIR`, `PEERTUBE_URL`, `PEERTUBE_USER`
 and `PEERTUBE_PASS` before running the script. Set
 `USE_FIREFOX_COOKIES=true` if yt-dlp should use Firefox browser cookies for
-authenticated downloads. Set `MATCH_UPLOAD_DATE=true` to make the PeerTube
-publication date match the original YouTube upload date using the REST API
-(requires administrator access on the PeerTube instance). The PeerTube variables
-are only required when uploading.
+authenticated downloads. The PeerTube variables are only required when
+uploading. `set_publish_date.py` uses the standard PostgreSQL environment
+variables (`PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`) to connect
+directly to the PeerTube database and update publication dates.
+
+## Setting publication dates
+
+After uploading videos, run `set_publish_date.py` to update the PeerTube
+`published_at` field based on the original YouTube upload dates stored in the
+`yt_downloads/*.info.json` files and the mappings in `uploaded-map.txt`.
+
+```bash
+./set_publish_date.py
+```
