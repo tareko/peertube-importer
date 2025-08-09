@@ -58,6 +58,15 @@ def read_upload_date(yt_id: str) -> datetime | None:
     return dt
 
 
+def column_exists(cur: psycopg2.extensions.cursor, table: str, column: str) -> bool:
+    """Return True if the given table contains the specified column."""
+    cur.execute(
+        "SELECT 1 FROM information_schema.columns WHERE table_name = %s AND column_name = %s",
+        (table, column),
+    )
+    return cur.fetchone() is not None
+
+
 def main() -> None:
     load_env()
     conn = psycopg2.connect(
@@ -68,6 +77,7 @@ def main() -> None:
         password=os.getenv("PGPASSWORD"),
     )
     with conn, conn.cursor() as cur:
+        has_short_uuid = column_exists(cur, "video", "short_uuid")
         with MAP_FILE.open() as f:
             for line in f:
                 parts = line.strip().split()
@@ -77,10 +87,16 @@ def main() -> None:
                 dt = read_upload_date(yt_id)
                 if not dt:
                     continue
-                cur.execute(
-                    "UPDATE video SET published_at = %s WHERE uuid::text = %s OR short_uuid = %s OR id::text = %s",
-                    (dt, pt_id, pt_id, pt_id),
-                )
+                if has_short_uuid:
+                    cur.execute(
+                        "UPDATE video SET published_at = %s WHERE uuid::text = %s OR short_uuid = %s OR id::text = %s",
+                        (dt, pt_id, pt_id, pt_id),
+                    )
+                else:
+                    cur.execute(
+                        "UPDATE video SET published_at = %s WHERE uuid::text = %s OR id::text = %s",
+                        (dt, pt_id, pt_id),
+                    )
     print("Publication dates updated.")
 
 
