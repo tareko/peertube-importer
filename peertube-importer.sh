@@ -99,8 +99,74 @@ else
 fi
 
 # 5) Loop through each video
+
+# Update metadata/thumbnail of an already uploaded video if needed
+sync_metadata() {
+  local vid="$1" peertube_id="$2"
+  local info_json title description thumb_path remote_json remote_title remote_description remote_thumb
+  info_json="${DOWNLOAD_DIR}/${vid}.info.json"
+  title=$(jq -r '.title' < "${info_json}")
+  description=$(jq -r '.description' < "${info_json}")
+  thumb_path=$(find "${DOWNLOAD_DIR}" -maxdepth 1 -type f \
+    \( -iname "${vid}.jpg" -o -iname "${vid}.jpeg" -o -iname "${vid}.png" -o -iname "${vid}.webp" \) \
+    | head -n 1 || true)
+  if [[ -n "${thumb_path}" ]]; then
+    thumb_path=$(realpath "${thumb_path}")
+  fi
+  remote_json=$(peertube-cli video get --id "${peertube_id}" --url "${PEERTUBE_URL}" \
+    --username "${PEERTUBE_USER}" --password "${PEERTUBE_PASS}" --json 2>/dev/null || true)
+  remote_title=$(jq -r '.name // .title // empty' <<<"${remote_json}")
+  remote_description=$(jq -r '.description // empty' <<<"${remote_json}")
+  remote_thumb=$(jq -r '.thumbnailPath // .thumbnailUrl // empty' <<<"${remote_json}")
+
+  update_args=(
+    peertube-cli video update
+    --id "${peertube_id}"
+    --url "${PEERTUBE_URL}"
+    --username "${PEERTUBE_USER}"
+    --password "${PEERTUBE_PASS}"
+  )
+  local update=false
+  if [[ "${title}" != "${remote_title}" ]]; then
+    update_args+=(--video-name "${title}")
+    update=true
+  fi
+  if [[ "${description}" != "${remote_description}" ]]; then
+    update_args+=(--video-description "${description}")
+    update=true
+  fi
+  if [[ -n "${thumb_path}" ]]; then
+    local local_hash remote_hash=""
+    local_hash=$(sha256sum "${thumb_path}" | awk '{print $1}')
+    if [[ -n "${remote_thumb}" ]]; then
+      remote_hash=$(curl -fsSL "${PEERTUBE_URL}${remote_thumb}" | sha256sum | awk '{print $1}' || true)
+    fi
+    if [[ "${local_hash}" != "${remote_hash}" ]]; then
+      update_args+=(--thumbnail-file "${thumb_path}")
+      update=true
+    fi
+  fi
+  if [[ "${update}" == true ]]; then
+    update_args+=(--json)
+    echo "Updating metadata for ${vid} (${peertube_id})"
+    "${update_args[@]}"
+  else
+    echo "Metadata up to date for ${vid} (${peertube_id})"
+  fi
+}
+
 upload_video() {
   local vid="$1"
+  local existing_id
+  existing_id=$(awk -v v="$vid" '$1==v {print $2}' "${UPLOAD_MAP_FILE}" || true)
+  if [[ -n "${existing_id}" ]]; then
+    echo "Video ${vid} already uploaded as ${existing_id}, syncing metadata"
+    sync_metadata "${vid}" "${existing_id}"
+    if ! grep -Fxq "${vid}" "${UPLOAD_ARCHIVE_FILE}"; then
+      echo "${vid}" >> "${UPLOAD_ARCHIVE_FILE}"
+    fi
+    return
+  fi
   if grep -Fxq "$vid" "${UPLOAD_ARCHIVE_FILE}"; then
     echo "Skipping already uploaded video ${vid}"
     return
