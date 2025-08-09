@@ -70,8 +70,9 @@ fi
 DOWNLOAD_DIR="./yt_downloads"
 ARCHIVE_FILE="./yt-dlp-archive.txt"
 UPLOAD_ARCHIVE_FILE="./uploaded.txt"
+UPLOAD_MAP_FILE="./uploaded-map.txt"
 mkdir -p "${DOWNLOAD_DIR}"
-touch "${ARCHIVE_FILE}" "${UPLOAD_ARCHIVE_FILE}"
+touch "${ARCHIVE_FILE}" "${UPLOAD_ARCHIVE_FILE}" "${UPLOAD_MAP_FILE}"
 
 # Optional yt-dlp cookies flag
 YTDLP_COOKIES=()
@@ -127,11 +128,17 @@ upload_video() {
     --password "${PEERTUBE_PASS}"
     --video-name "${title}"
     --video-description "${description}"
+    --json
   )
   if [[ -n "${thumb_path}" ]]; then
     upload_args+=(--thumbnail-file "${thumb_path}")
   fi
-  "${upload_args[@]}"
+  upload_json=$("${upload_args[@]}")
+  echo "${upload_json}"
+  peertube_id=$(jq -r '.video.uuid // .video.shortUUID // .video.id // empty' <<<"${upload_json}" 2>/dev/null || true)
+  if [[ -n "${peertube_id}" ]]; then
+    echo "${vid} ${peertube_id}" >> "${UPLOAD_MAP_FILE}"
+  fi
   echo "${vid}" >> "${UPLOAD_ARCHIVE_FILE}"
 }
 
