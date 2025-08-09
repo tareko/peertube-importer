@@ -114,7 +114,7 @@ sync_metadata() {
     thumb_path=$(realpath "${thumb_path}")
   fi
   remote_json=$(peertube-cli video get --id "${peertube_id}" --url "${PEERTUBE_URL}" \
-    --username "${PEERTUBE_USER}" --password "${PEERTUBE_PASS}" --json 2>/dev/null || true)
+    --username "${PEERTUBE_USER}" --password "${PEERTUBE_PASS}" 2>/dev/null || true)
   remote_title=$(jq -r '.name // .title // empty' <<<"${remote_json}")
   remote_description=$(jq -r '.description // empty' <<<"${remote_json}")
   remote_thumb=$(jq -r '.thumbnailPath // .thumbnailUrl // empty' <<<"${remote_json}")
@@ -142,12 +142,11 @@ sync_metadata() {
       remote_hash=$(curl -fsSL "${PEERTUBE_URL}${remote_thumb}" | sha256sum | awk '{print $1}' || true)
     fi
     if [[ "${local_hash}" != "${remote_hash}" ]]; then
-      update_args+=(--thumbnail-file "${thumb_path}")
+      update_args+=(--thumbnail "${thumb_path}")
       update=true
     fi
   fi
   if [[ "${update}" == true ]]; then
-    update_args+=(--json)
     echo "Updating metadata for ${vid} (${peertube_id})"
     "${update_args[@]}"
   else
@@ -195,10 +194,9 @@ upload_video() {
     --password "${PEERTUBE_PASS}"
     --video-name "${title}"
     --video-description "${description}"
-    --json
   )
   if [[ -n "${thumb_path}" ]]; then
-    upload_args+=(--thumbnail-file "${thumb_path}")
+    upload_args+=(--thumbnail "${thumb_path}")
   fi
   if [[ "${MATCH_UPLOAD_DATE:-false}" == true && -n "${upload_date}" ]]; then
     if published_at=$(date -d "${upload_date}" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null); then
