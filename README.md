@@ -18,5 +18,6 @@ are skipped on subsequent runs to avoid re-uploading.
 
 ## Configuration
 Copy `sample.env` to `.env` and set `BASE_DIR`, `PEERTUBE_URL`, `PEERTUBE_USER`
-and `PEERTUBE_PASS` before running the script. The PeerTube variables are only
-required when uploading.
+and `PEERTUBE_PASS` before running the script. Set
+`USE_FIREFOX_COOKIES=true` if yt-dlp should use Firefox browser cookies for
+authenticated downloads. The PeerTube variables are only required when uploading.

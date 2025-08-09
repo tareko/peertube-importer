@@ -73,6 +73,12 @@ UPLOAD_ARCHIVE_FILE="./uploaded.txt"
 mkdir -p "${DOWNLOAD_DIR}"
 touch "${ARCHIVE_FILE}" "${UPLOAD_ARCHIVE_FILE}"
 
+# Optional yt-dlp cookies flag
+YTDLP_COOKIES=()
+if [[ "${USE_FIREFOX_COOKIES:-false}" == true ]]; then
+  YTDLP_COOKIES+=(--cookies-from-browser firefox)
+fi
+
 # 3) (Optional) authenticate once so future 'upload' calls omit creds
 if [[ "$DOWNLOAD_ONLY" == false ]]; then
   peertube-cli auth add \
@@ -85,7 +91,7 @@ fi
 if [[ "$UPLOAD_ONLY" == false ]]; then
   # Read all video URLs into an array. Quoting each entry avoids the shell
   # treating characters like '&' as control operators during iteration.
-  mapfile -t VIDEO_URLS < <(yt-dlp --dump-json --flat-playlist "${CHANNEL_URL}" \
+  mapfile -t VIDEO_URLS < <(yt-dlp "${YTDLP_COOKIES[@]}" --dump-json --flat-playlist "${CHANNEL_URL}" \
     | jq -r '.url')
 else
   VIDEO_URLS=()
@@ -147,14 +153,14 @@ else
     VIDEO_ID=$(echo "${VIDEO_URL}" | sed -n 's/.*v=\([^&]*\).*/\1/p')
 
     # 5a) Download (skip if seen before)
-    yt-dlp -ciw \
+    yt-dlp "${YTDLP_COOKIES[@]}" -ciw \
       --download-archive "${ARCHIVE_FILE}" \
       --write-thumbnail \
       -o "${DOWNLOAD_DIR}/%(id)s.%(ext)s" \
       "${VIDEO_URL}"
 
     # 5b) Save metadata JSON
-    yt-dlp --skip-download --write-info-json --write-thumbnail \
+    yt-dlp "${YTDLP_COOKIES[@]}" --skip-download --write-info-json --write-thumbnail \
            -o "${DOWNLOAD_DIR}/${VIDEO_ID}.%(ext)s" \
            "${VIDEO_URL}"
 
