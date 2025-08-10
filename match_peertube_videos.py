@@ -36,7 +36,7 @@ def load_env(path: str = ".env") -> dict:
 def build_title_map(download_dir: pathlib.Path) -> dict:
     title_map = {}
     for info in download_dir.glob("*.info.json"):
-        yt_id = info.stem
+        yt_id = info.name.removesuffix(".info.json")
         try:
             with info.open() as f:
                 data = json.load(f)
