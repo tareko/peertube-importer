@@ -120,6 +120,7 @@ def main() -> None:
     videos = fetch_peertube_videos(pt_url, token) if pt_url else []
 
     with MAP_FILE.open("a") as out:
+        mapped_any = False
         for vid in videos:
             pt_id = vid.get("uuid") or vid.get("shortUUID") or str(vid.get("id"))
             yt_id = match_title(vid.get("name", ""), title_map)
@@ -127,7 +128,10 @@ def main() -> None:
                 continue
             out.write(f"{yt_id} {pt_id}\n")
             existing_map[yt_id] = pt_id
+            mapped_any = True
             print(f"Mapped {yt_id} -> {pt_id}")
+        if not mapped_any:
+            print("No new videos were added.")
 
 
 if __name__ == "__main__":
