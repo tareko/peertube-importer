@@ -3,8 +3,9 @@
 
 Reads `uploaded-map.txt` for mappings between YouTube IDs and PeerTube video
 IDs, looks up the original YouTube upload dates from
-`yt_downloads/<youtube_id>.info.json`, and updates the `published_at` column in
-the PeerTube `video` table accordingly. Connection parameters are taken from the
+`yt_downloads/<youtube_id>.info.json`, and updates the publication date column
+(`published_at` or `publishedAt`, depending on version) in the PeerTube `video`
+table accordingly. Connection parameters are taken from the
 standard PostgreSQL environment variables (`PGHOST`, `PGPORT`, `PGDATABASE`,
 `PGUSER`, `PGPASSWORD`). If present, variables defined in a local `.env` file
 are loaded before falling back to the environment.
@@ -18,6 +19,7 @@ import pathlib
 from datetime import datetime, timezone
 
 import psycopg2
+from psycopg2 import sql
 
 DOWNLOAD_DIR = pathlib.Path("./yt_downloads")
 MAP_FILE = pathlib.Path("./uploaded-map.txt")
@@ -78,6 +80,12 @@ def main() -> None:
     )
     with conn, conn.cursor() as cur:
         has_short_uuid = column_exists(cur, "video", "short_uuid")
+        if column_exists(cur, "video", "published_at"):
+            published_col = "published_at"
+        elif column_exists(cur, "video", "publishedAt"):
+            published_col = "publishedAt"
+        else:
+            raise RuntimeError("Neither 'published_at' nor 'publishedAt' column exists in 'video' table")
         with MAP_FILE.open() as f:
             for line in f:
                 parts = line.strip().split()
@@ -88,15 +96,15 @@ def main() -> None:
                 if not dt:
                     continue
                 if has_short_uuid:
-                    cur.execute(
-                        "UPDATE video SET published_at = %s WHERE uuid::text = %s OR short_uuid = %s OR id::text = %s",
-                        (dt, pt_id, pt_id, pt_id),
-                    )
+                    query = sql.SQL(
+                        "UPDATE video SET {col} = %s WHERE uuid::text = %s OR short_uuid = %s OR id::text = %s"
+                    ).format(col=sql.Identifier(published_col))
+                    cur.execute(query, (dt, pt_id, pt_id, pt_id))
                 else:
-                    cur.execute(
-                        "UPDATE video SET published_at = %s WHERE uuid::text = %s OR id::text = %s",
-                        (dt, pt_id, pt_id),
-                    )
+                    query = sql.SQL(
+                        "UPDATE video SET {col} = %s WHERE uuid::text = %s OR id::text = %s"
+                    ).format(col=sql.Identifier(published_col))
+                    cur.execute(query, (dt, pt_id, pt_id))
     print("Publication dates updated.")
 
 
