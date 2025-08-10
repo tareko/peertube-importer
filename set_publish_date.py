@@ -78,14 +78,19 @@ def main() -> None:
         user=os.getenv("PGUSER"),
         password=os.getenv("PGPASSWORD"),
     )
-    with conn, conn.cursor() as cur:
-        has_short_uuid = column_exists(cur, "video", "short_uuid")
-        if column_exists(cur, "video", "published_at"):
-            published_col = "published_at"
-        elif column_exists(cur, "video", "publishedAt"):
-            published_col = "publishedAt"
-        else:
-            raise RuntimeError("Neither 'published_at' nor 'publishedAt' column exists in 'video' table")
+    with conn:
+        # Determine relevant columns once outside the update loop
+        with conn.cursor() as cur:
+            has_short_uuid = column_exists(cur, "video", "short_uuid")
+            if column_exists(cur, "video", "published_at"):
+                published_col = "published_at"
+            elif column_exists(cur, "video", "publishedAt"):
+                published_col = "publishedAt"
+            else:
+                raise RuntimeError(
+                    "Neither 'published_at' nor 'publishedAt' column exists in 'video' table"
+                )
+
         with MAP_FILE.open() as f:
             for line in f:
                 parts = line.strip().split()
@@ -95,16 +100,22 @@ def main() -> None:
                 dt = read_upload_date(yt_id)
                 if not dt:
                     continue
-                if has_short_uuid:
-                    query = sql.SQL(
-                        "UPDATE video SET {col} = %s WHERE uuid::text = %s OR short_uuid = %s OR id::text = %s"
-                    ).format(col=sql.Identifier(published_col))
-                    cur.execute(query, (dt, pt_id, pt_id, pt_id))
-                else:
-                    query = sql.SQL(
-                        "UPDATE video SET {col} = %s WHERE uuid::text = %s OR id::text = %s"
-                    ).format(col=sql.Identifier(published_col))
-                    cur.execute(query, (dt, pt_id, pt_id))
+                print(f"Updating video {pt_id} to {dt.isoformat()}")
+
+                with conn.cursor() as cur:
+                    if has_short_uuid:
+                        query = sql.SQL(
+                            "UPDATE video SET {col} = %s WHERE uuid::text = %s OR short_uuid = %s OR id::text = %s"
+                        ).format(col=sql.Identifier(published_col))
+                        cur.execute(query, (dt, pt_id, pt_id, pt_id))
+                    else:
+                        query = sql.SQL(
+                            "UPDATE video SET {col} = %s WHERE uuid::text = %s OR id::text = %s"
+                        ).format(col=sql.Identifier(published_col))
+                        cur.execute(query, (dt, pt_id, pt_id))
+                    if cur.rowcount == 0:
+                        print(f"No video matched ID {pt_id}")
+                conn.commit()
     print("Publication dates updated.")
 
 
