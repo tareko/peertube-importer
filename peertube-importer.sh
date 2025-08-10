@@ -130,12 +130,13 @@ fi
 
 # Upload a thumbnail to an existing PeerTube video via REST API
 upload_thumbnail() {
-  local peertube_id="$1" thumb_file="$2"
+  local peertube_id="$1" thumb_file="$2" mime
   fetch_peertube_token
   [[ -z "${PEERTUBE_TOKEN:-}" ]] && return
+  mime=$(file -b --mime-type "${thumb_file}" 2>/dev/null || echo image/jpeg)
   curl -fsSL -X POST "${PEERTUBE_URL}/api/v1/videos/${peertube_id}/thumbnail" \
     -H "Authorization: Bearer ${PEERTUBE_TOKEN}" \
-    -F "thumbnailfile=@${thumb_file}" >/dev/null
+    -F "thumbnailfile=@${thumb_file};type=${mime}" >/dev/null
 }
 
 # Update metadata and thumbnail of an already uploaded video if needed
