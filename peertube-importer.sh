@@ -81,11 +81,38 @@ if [[ "${USE_FIREFOX_COOKIES:-false}" == true ]]; then
 fi
 
 # 3) (Optional) authenticate once so future 'upload' calls omit creds
+PEERTUBE_CLIENT_ID=""
+PEERTUBE_CLIENT_SECRET=""
+PEERTUBE_TOKEN=""
+
+fetch_client_credentials() {
+  if [[ -z "${PEERTUBE_CLIENT_ID:-}" || -z "${PEERTUBE_CLIENT_SECRET:-}" ]]; then
+    local creds
+    creds=$(curl -fsSL "${PEERTUBE_URL}/api/v1/oauth-clients/local" 2>/dev/null || true)
+    PEERTUBE_CLIENT_ID=$(jq -r '.client_id // empty' <<<"${creds}")
+    PEERTUBE_CLIENT_SECRET=$(jq -r '.client_secret // empty' <<<"${creds}")
+  fi
+}
+
+fetch_peertube_token() {
+  if [[ -z "${PEERTUBE_TOKEN:-}" ]]; then
+    PEERTUBE_TOKEN=$(curl -fsSL "${PEERTUBE_URL}/api/v1/users/token" \
+      --data-urlencode "client_id=${PEERTUBE_CLIENT_ID}" \
+      --data-urlencode "client_secret=${PEERTUBE_CLIENT_SECRET}" \
+      --data-urlencode "grant_type=password" \
+      --data-urlencode "username=${PEERTUBE_USER}" \
+      --data-urlencode "password=${PEERTUBE_PASS}" \
+      | jq -r '.access_token // empty' || true)
+  fi
+}
+
 if [[ "$DOWNLOAD_ONLY" == false ]]; then
   peertube-cli auth add \
     -u "${PEERTUBE_URL}" \
     -U "${PEERTUBE_USER}" \
     --password "${PEERTUBE_PASS}"
+  fetch_client_credentials
+  fetch_peertube_token
 fi
 
 
@@ -101,68 +128,95 @@ fi
 
 # 5) Loop through each video
 
-# Update metadata/thumbnail of an already uploaded video if needed
+# Ensure thumbnails are PNG; convert WebP inputs when needed
+ensure_png_thumbnail() {
+  local in_file="$1" lower output
+  lower="${in_file,,}"
+  if [[ "$lower" == *.webp ]]; then
+    output="${in_file%.*}.png"
+    if [[ ! -f "$output" ]]; then
+      if command -v ffmpeg >/dev/null 2>&1; then
+        ffmpeg -loglevel error -y -i "$in_file" "$output" || return 1
+      else
+        echo "ffmpeg is required to convert WebP thumbnails" >&2
+        return 1
+      fi
+    fi
+    echo "$output"
+  else
+    echo "$in_file"
+  fi
+}
+
+# Upload thumbnail and preview images to an existing PeerTube video via REST API
+upload_thumbnail() {
+  local peertube_id="$1" thumb_file="$2" mime
+  thumb_file=$(ensure_png_thumbnail "$thumb_file") || return
+  fetch_peertube_token
+  [[ -z "${PEERTUBE_TOKEN:-}" ]] && return
+  mime=$(file -b --mime-type "${thumb_file}" 2>/dev/null || echo image/png)
+  curl -fsSL -X PUT "${PEERTUBE_URL}/api/v1/videos/${peertube_id}" \
+    -H "Authorization: Bearer ${PEERTUBE_TOKEN}" \
+    -F "thumbnailfile=@${thumb_file};type=${mime}" \
+    -F "previewfile=@${thumb_file};type=${mime}" >/dev/null
+}
+
+# Update metadata and thumbnail of an already uploaded video if needed
 sync_metadata() {
   local vid="$1" peertube_id="$2"
-  local info_json title description thumb_path remote_json remote_title remote_description remote_thumb
-  info_json="${DOWNLOAD_DIR}/${vid}.info.json"
-  title=$(jq -r '.title' < "${info_json}")
-  description=$(jq -r '.description' < "${info_json}")
+  fetch_peertube_token
+  local thumb_path info_json remote_json remote_title remote_desc
   thumb_path=$(find "${DOWNLOAD_DIR}" -maxdepth 1 -type f \
     \( -iname "${vid}.jpg" -o -iname "${vid}.jpeg" -o -iname "${vid}.png" -o -iname "${vid}.webp" \) \
     | head -n 1 || true)
   if [[ -n "${thumb_path}" ]]; then
     thumb_path=$(realpath "${thumb_path}")
+    thumb_path=$(ensure_png_thumbnail "${thumb_path}" || true)
   fi
-  remote_json=$(peertube-cli video-get --id "${peertube_id}" --url "${PEERTUBE_URL}" \
-    --username "${PEERTUBE_USER}" --password "${PEERTUBE_PASS}" 2>/dev/null || true)
+  info_json="${DOWNLOAD_DIR}/${vid}.info.json"
+  remote_json=$(curl -fsSL "${PEERTUBE_URL}/api/v1/videos/${peertube_id}" \
+    -H "Authorization: Bearer ${PEERTUBE_TOKEN}" 2>/dev/null || true)
   if [[ -n "${remote_json}" ]]; then
-    remote_title=$(jq -r '.name // .title // empty' <<<"${remote_json}" 2>/dev/null || true)
-    remote_description=$(jq -r '.description // empty' <<<"${remote_json}" 2>/dev/null || true)
-    remote_thumb=$(jq -r '.thumbnailPath // .thumbnailUrl // empty' <<<"${remote_json}" 2>/dev/null || true)
+    remote_title=$(jq -r '.name // empty' <<<"${remote_json}" 2>/dev/null || true)
+    remote_desc=$(jq -r '.description // empty' <<<"${remote_json}" 2>/dev/null || true)
   else
     remote_title=""
-    remote_description=""
-    remote_thumb=""
+    remote_desc=""
   fi
 
-  update_args=(
-    peertube-cli video-update
-    --id "${peertube_id}"
-    --url "${PEERTUBE_URL}"
-    --username "${PEERTUBE_USER}"
-    --password "${PEERTUBE_PASS}"
-  )
-  local update=false
-  if [[ "${title}" != "${remote_title}" ]]; then
-    update_args+=(--video-name "${title}")
-    update=true
-  fi
-  if [[ "${description}" != "${remote_description}" ]]; then
-    update_args+=(--video-description "${description}")
-    update=true
-  fi
+  local thumb_updated=false meta_updated=false
   if [[ -n "${thumb_path}" ]]; then
-    local local_hash remote_hash="" remote_thumb_url
-    local_hash=$(sha256sum "${thumb_path}" | awk '{print $1}')
-    if [[ -n "${remote_thumb}" ]]; then
-      if [[ "${remote_thumb}" != http* ]]; then
-        remote_thumb_url="${PEERTUBE_URL}${remote_thumb}"
-      else
-        remote_thumb_url="${remote_thumb}"
-      fi
-      remote_hash=$(curl -fsSL "${remote_thumb_url}" | sha256sum | awk '{print $1}' || true)
-    fi
-    if [[ -z "${remote_hash}" || "${local_hash}" != "${remote_hash}" ]]; then
-      update_args+=(--thumbnail "${thumb_path}")
-      update=true
-    fi
+    echo "Uploading thumbnail for ${vid} (${peertube_id})"
+    upload_thumbnail "${peertube_id}" "${thumb_path}"
+    thumb_updated=true
   fi
-  if [[ "${update}" == true ]]; then
+
+  local local_title local_desc
+  local_title=$(jq -r '.title // empty' < "${info_json}" 2>/dev/null || true)
+  local_desc=$(jq -r '.description // empty' < "${info_json}" 2>/dev/null || true)
+  if [[ -n "${remote_json}" && ( ( -n "${local_title}" && "${local_title}" != "${remote_title}" ) || \
+        "${local_desc}" != "${remote_desc}" ) ]]; then
     echo "Updating metadata for ${vid} (${peertube_id})"
-    "${update_args[@]}"
+    local channel_id privacy
+    channel_id=$(jq -r '.channel.id' <<<"${remote_json}" 2>/dev/null || true)
+    privacy=$(jq -r '.privacy' <<<"${remote_json}" 2>/dev/null || true)
+    jq -n \
+      --arg name "${local_title}" \
+      --arg description "${local_desc}" \
+      --arg channelId "${channel_id}" \
+      --arg privacy "${privacy}" \
+      '{name:$name, description:$description, channelId:($channelId|tonumber), privacy:($privacy|tonumber)}' \
+      | curl -fsSL -X PUT "${PEERTUBE_URL}/api/v1/videos/${peertube_id}" \
+        -H "Authorization: Bearer ${PEERTUBE_TOKEN}" \
+        -H "Content-Type: application/json" \
+        --data-binary @- >/dev/null
+    meta_updated=true
+  fi
+
+  if [[ "${thumb_updated}" == true || "${meta_updated}" == true ]]; then
+    echo "Metadata synced for ${vid} (${peertube_id})"
   else
-    echo "Metadata up to date for ${vid} (${peertube_id})"
+    echo "No updates needed for ${vid} (${peertube_id})"
   fi
 }
 
@@ -214,6 +268,7 @@ upload_video() {
        -o -iname "${vid}.webp" \) | head -n 1 || true)
   if [[ -n "${thumb_path}" ]]; then
     thumb_path=$(realpath "${thumb_path}")
+    thumb_path=$(ensure_png_thumbnail "${thumb_path}" || true)
   fi
   info_json="${DOWNLOAD_DIR}/${vid}.info.json"
   title=$(jq -r '.title' < "${info_json}")
@@ -235,6 +290,9 @@ upload_video() {
   echo "${upload_json}"
   peertube_id=$(jq -r '.video.uuid // .video.shortUUID // .video.id // empty' <<<"${upload_json}" 2>/dev/null || true)
   if [[ -n "${peertube_id}" ]]; then
+    if [[ -n "${thumb_path}" ]]; then
+      upload_thumbnail "${peertube_id}" "${thumb_path}"
+    fi
     echo "${vid} ${peertube_id}" >> "${UPLOAD_MAP_FILE}"
   fi
   echo "${vid}" >> "${UPLOAD_ARCHIVE_FILE}"
