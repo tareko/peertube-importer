@@ -186,22 +186,10 @@ sync_metadata() {
   fi
 
   local thumb_updated=false meta_updated=false
-  if [[ -n "${thumb_path}" ]]; then
-    local local_hash remote_hash="" remote_thumb_url
-    local_hash=$(sha256sum "${thumb_path}" | awk '{print $1}')
-    if [[ -n "${remote_thumb}" ]]; then
-      if [[ "${remote_thumb}" != http* ]]; then
-        remote_thumb_url="${PEERTUBE_URL}${remote_thumb}"
-      else
-        remote_thumb_url="${remote_thumb}"
-      fi
-      remote_hash=$(curl -fsSL "${remote_thumb_url}" | sha256sum | awk '{print $1}' || true)
-    fi
-    if [[ -z "${remote_hash}" || "${local_hash}" != "${remote_hash}" ]]; then
-      echo "Uploading thumbnail for ${vid} (${peertube_id})"
-      upload_thumbnail "${peertube_id}" "${thumb_path}"
-      thumb_updated=true
-    fi
+  if [[ -n "${thumb_path}" && -z "${remote_thumb}" ]]; then
+    echo "Uploading thumbnail for ${vid} (${peertube_id})"
+    upload_thumbnail "${peertube_id}" "${thumb_path}"
+    thumb_updated=true
   fi
 
   local local_title local_desc
