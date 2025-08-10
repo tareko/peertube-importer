@@ -116,13 +116,10 @@ upload_thumbnail() {
     -F "thumbnailfile=@${thumb_file}" >/dev/null
 }
 
-# Update metadata/thumbnail of an already uploaded video if needed
+# Update thumbnail of an already uploaded video if needed
 sync_metadata() {
   local vid="$1" peertube_id="$2"
-  local info_json title description thumb_path remote_json remote_title remote_description remote_thumb
-  info_json="${DOWNLOAD_DIR}/${vid}.info.json"
-  title=$(jq -r '.title' < "${info_json}")
-  description=$(jq -r '.description' < "${info_json}")
+  local thumb_path remote_json remote_thumb
   thumb_path=$(find "${DOWNLOAD_DIR}" -maxdepth 1 -type f \
     \( -iname "${vid}.jpg" -o -iname "${vid}.jpeg" -o -iname "${vid}.png" -o -iname "${vid}.webp" \) \
     | head -n 1 || true)
@@ -132,31 +129,11 @@ sync_metadata() {
   remote_json=$(peertube-cli video-get --id "${peertube_id}" --url "${PEERTUBE_URL}" \
     --username "${PEERTUBE_USER}" --password "${PEERTUBE_PASS}" 2>/dev/null || true)
   if [[ -n "${remote_json}" ]]; then
-    remote_title=$(jq -r '.name // .title // empty' <<<"${remote_json}" 2>/dev/null || true)
-    remote_description=$(jq -r '.description // empty' <<<"${remote_json}" 2>/dev/null || true)
     remote_thumb=$(jq -r '.thumbnailPath // .thumbnailUrl // empty' <<<"${remote_json}" 2>/dev/null || true)
   else
-    remote_title=""
-    remote_description=""
     remote_thumb=""
   fi
 
-  update_args=(
-    peertube-cli video-update
-    --id "${peertube_id}"
-    --url "${PEERTUBE_URL}"
-    --username "${PEERTUBE_USER}"
-    --password "${PEERTUBE_PASS}"
-  )
-  local update=false
-  if [[ "${title}" != "${remote_title}" ]]; then
-    update_args+=(--video-name "${title}")
-    update=true
-  fi
-  if [[ "${description}" != "${remote_description}" ]]; then
-    update_args+=(--video-description "${description}")
-    update=true
-  fi
   local thumb_updated=false
   if [[ -n "${thumb_path}" ]]; then
     local local_hash remote_hash="" remote_thumb_url
@@ -175,13 +152,10 @@ sync_metadata() {
       thumb_updated=true
     fi
   fi
-  if [[ "${update}" == true ]]; then
-    echo "Updating metadata for ${vid} (${peertube_id})"
-    "${update_args[@]}"
-  elif [[ "${thumb_updated}" == true ]]; then
+  if [[ "${thumb_updated}" == true ]]; then
     echo "Thumbnail updated for ${vid} (${peertube_id})"
   else
-    echo "Metadata up to date for ${vid} (${peertube_id})"
+    echo "No updates needed for ${vid} (${peertube_id})"
   fi
 }
 
