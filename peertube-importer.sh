@@ -116,25 +116,30 @@ upload_thumbnail() {
     -F "thumbnailfile=@${thumb_file}" >/dev/null
 }
 
-# Update thumbnail of an already uploaded video if needed
+# Update metadata and thumbnail of an already uploaded video if needed
 sync_metadata() {
   local vid="$1" peertube_id="$2"
-  local thumb_path remote_json remote_thumb
+  local thumb_path info_json remote_json remote_thumb remote_title remote_desc
   thumb_path=$(find "${DOWNLOAD_DIR}" -maxdepth 1 -type f \
     \( -iname "${vid}.jpg" -o -iname "${vid}.jpeg" -o -iname "${vid}.png" -o -iname "${vid}.webp" \) \
     | head -n 1 || true)
   if [[ -n "${thumb_path}" ]]; then
     thumb_path=$(realpath "${thumb_path}")
   fi
-  remote_json=$(peertube-cli video-get --id "${peertube_id}" --url "${PEERTUBE_URL}" \
-    --username "${PEERTUBE_USER}" --password "${PEERTUBE_PASS}" 2>/dev/null || true)
+  info_json="${DOWNLOAD_DIR}/${vid}.info.json"
+  remote_json=$(curl -fsSL "${PEERTUBE_URL}/api/v1/videos/${peertube_id}" \
+    -H "Authorization: Bearer ${PEERTUBE_TOKEN}" 2>/dev/null || true)
   if [[ -n "${remote_json}" ]]; then
     remote_thumb=$(jq -r '.thumbnailPath // .thumbnailUrl // empty' <<<"${remote_json}" 2>/dev/null || true)
+    remote_title=$(jq -r '.name // empty' <<<"${remote_json}" 2>/dev/null || true)
+    remote_desc=$(jq -r '.description // empty' <<<"${remote_json}" 2>/dev/null || true)
   else
     remote_thumb=""
+    remote_title=""
+    remote_desc=""
   fi
 
-  local thumb_updated=false
+  local thumb_updated=false meta_updated=false
   if [[ -n "${thumb_path}" ]]; then
     local local_hash remote_hash="" remote_thumb_url
     local_hash=$(sha256sum "${thumb_path}" | awk '{print $1}')
@@ -152,8 +157,31 @@ sync_metadata() {
       thumb_updated=true
     fi
   fi
-  if [[ "${thumb_updated}" == true ]]; then
-    echo "Thumbnail updated for ${vid} (${peertube_id})"
+
+  local local_title local_desc
+  local_title=$(jq -r '.title // empty' < "${info_json}" 2>/dev/null || true)
+  local_desc=$(jq -r '.description // empty' < "${info_json}" 2>/dev/null || true)
+  if [[ -n "${remote_json}" && ( ( -n "${local_title}" && "${local_title}" != "${remote_title}" ) || \
+        "${local_desc}" != "${remote_desc}" ) ]]; then
+    echo "Updating metadata for ${vid} (${peertube_id})"
+    local channel_id privacy
+    channel_id=$(jq -r '.channel.id' <<<"${remote_json}" 2>/dev/null || true)
+    privacy=$(jq -r '.privacy' <<<"${remote_json}" 2>/dev/null || true)
+    jq -n \
+      --arg name "${local_title}" \
+      --arg description "${local_desc}" \
+      --arg channelId "${channel_id}" \
+      --arg privacy "${privacy}" \
+      '{name:$name, description:$description, channelId:($channelId|tonumber), privacy:($privacy|tonumber)}' \
+      | curl -fsSL -X PUT "${PEERTUBE_URL}/api/v1/videos/${peertube_id}" \
+        -H "Authorization: Bearer ${PEERTUBE_TOKEN}" \
+        -H "Content-Type: application/json" \
+        --data-binary @- >/dev/null
+    meta_updated=true
+  fi
+
+  if [[ "${thumb_updated}" == true || "${meta_updated}" == true ]]; then
+    echo "Metadata synced for ${vid} (${peertube_id})"
   else
     echo "No updates needed for ${vid} (${peertube_id})"
   fi
