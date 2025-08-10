@@ -286,7 +286,7 @@ upload_video() {
   if [[ -n "${thumb_path}" ]]; then
     upload_args+=(--thumbnail "${thumb_path}")
   fi
-  upload_json=$(${upload_args[@]})
+  upload_json=$("${upload_args[@]}")
   echo "${upload_json}"
   peertube_id=$(jq -r '.video.uuid // .video.shortUUID // .video.id // empty' <<<"${upload_json}" 2>/dev/null || true)
   if [[ -n "${peertube_id}" ]]; then
