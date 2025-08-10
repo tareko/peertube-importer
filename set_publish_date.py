@@ -95,6 +95,7 @@ def main() -> None:
                 dt = read_upload_date(yt_id)
                 if not dt:
                     continue
+                print(f"Updating video {pt_id} to {dt.isoformat()}")
                 if has_short_uuid:
                     query = sql.SQL(
                         "UPDATE video SET {col} = %s WHERE uuid::text = %s OR short_uuid = %s OR id::text = %s"
@@ -105,6 +106,9 @@ def main() -> None:
                         "UPDATE video SET {col} = %s WHERE uuid::text = %s OR id::text = %s"
                     ).format(col=sql.Identifier(published_col))
                     cur.execute(query, (dt, pt_id, pt_id))
+                if cur.rowcount == 0:
+                    print(f"No video matched ID {pt_id}")
+                conn.commit()
     print("Publication dates updated.")
 
 
