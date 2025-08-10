@@ -134,7 +134,7 @@ upload_thumbnail() {
   fetch_peertube_token
   [[ -z "${PEERTUBE_TOKEN:-}" ]] && return
   mime=$(file -b --mime-type "${thumb_file}" 2>/dev/null || echo image/jpeg)
-  curl -fsSL -X POST "${PEERTUBE_URL}/api/v1/videos/${peertube_id}/thumbnail" \
+  curl -fsSL -X PUT "${PEERTUBE_URL}/api/v1/videos/${peertube_id}/thumbnail" \
     -H "Authorization: Bearer ${PEERTUBE_TOKEN}" \
     -F "thumbnailfile=@${thumb_file};type=${mime}" >/dev/null
 }
