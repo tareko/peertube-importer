@@ -81,17 +81,24 @@ if [[ "${USE_FIREFOX_COOKIES:-false}" == true ]]; then
 fi
 
 # 3) (Optional) authenticate once so future 'upload' calls omit creds
+PEERTUBE_TOKEN=""
+fetch_peertube_token() {
+  if [[ -z "${PEERTUBE_TOKEN:-}" ]]; then
+    PEERTUBE_TOKEN=$(curl -fsSL "${PEERTUBE_URL}/api/v1/users/token" \
+      --data-urlencode "client_id=peertube-cli" \
+      --data-urlencode "grant_type=password" \
+      --data-urlencode "username=${PEERTUBE_USER}" \
+      --data-urlencode "password=${PEERTUBE_PASS}" \
+      | jq -r '.access_token // empty' || true)
+  fi
+}
+
 if [[ "$DOWNLOAD_ONLY" == false ]]; then
   peertube-cli auth add \
     -u "${PEERTUBE_URL}" \
     -U "${PEERTUBE_USER}" \
     --password "${PEERTUBE_PASS}"
-  PEERTUBE_TOKEN=$(curl -fsSL "${PEERTUBE_URL}/api/v1/users/token" \
-    --data-urlencode "client_id=peertube-cli" \
-    --data-urlencode "grant_type=password" \
-    --data-urlencode "username=${PEERTUBE_USER}" \
-    --data-urlencode "password=${PEERTUBE_PASS}" \
-    | jq -r '.access_token // empty' || true)
+  fetch_peertube_token
 fi
 
 
@@ -110,6 +117,7 @@ fi
 # Upload a thumbnail to an existing PeerTube video via REST API
 upload_thumbnail() {
   local peertube_id="$1" thumb_file="$2"
+  fetch_peertube_token
   [[ -z "${PEERTUBE_TOKEN:-}" ]] && return
   curl -fsSL -X POST "${PEERTUBE_URL}/api/v1/videos/${peertube_id}/thumbnail" \
     -H "Authorization: Bearer ${PEERTUBE_TOKEN}" \
@@ -119,6 +127,7 @@ upload_thumbnail() {
 # Update metadata and thumbnail of an already uploaded video if needed
 sync_metadata() {
   local vid="$1" peertube_id="$2"
+  fetch_peertube_token
   local thumb_path info_json remote_json remote_thumb remote_title remote_desc
   thumb_path=$(find "${DOWNLOAD_DIR}" -maxdepth 1 -type f \
     \( -iname "${vid}.jpg" -o -iname "${vid}.jpeg" -o -iname "${vid}.png" -o -iname "${vid}.webp" \) \
