@@ -128,12 +128,33 @@ fi
 
 # 5) Loop through each video
 
+# Ensure thumbnails are PNG; convert WebP inputs when needed
+ensure_png_thumbnail() {
+  local in_file="$1" lower output
+  lower="${in_file,,}"
+  if [[ "$lower" == *.webp ]]; then
+    output="${in_file%.*}.png"
+    if [[ ! -f "$output" ]]; then
+      if command -v ffmpeg >/dev/null 2>&1; then
+        ffmpeg -loglevel error -y -i "$in_file" "$output" || return 1
+      else
+        echo "ffmpeg is required to convert WebP thumbnails" >&2
+        return 1
+      fi
+    fi
+    echo "$output"
+  else
+    echo "$in_file"
+  fi
+}
+
 # Upload a thumbnail to an existing PeerTube video via REST API
 upload_thumbnail() {
   local peertube_id="$1" thumb_file="$2" mime
+  thumb_file=$(ensure_png_thumbnail "$thumb_file") || return
   fetch_peertube_token
   [[ -z "${PEERTUBE_TOKEN:-}" ]] && return
-  mime=$(file -b --mime-type "${thumb_file}" 2>/dev/null || echo image/jpeg)
+  mime=$(file -b --mime-type "${thumb_file}" 2>/dev/null || echo image/png)
   curl -fsSL -X PUT "${PEERTUBE_URL}/api/v1/videos/${peertube_id}/thumbnail" \
     -H "Authorization: Bearer ${PEERTUBE_TOKEN}" \
     -F "thumbnailfile=@${thumb_file};type=${mime}" >/dev/null
@@ -149,6 +170,7 @@ sync_metadata() {
     | head -n 1 || true)
   if [[ -n "${thumb_path}" ]]; then
     thumb_path=$(realpath "${thumb_path}")
+    thumb_path=$(ensure_png_thumbnail "${thumb_path}" || true)
   fi
   info_json="${DOWNLOAD_DIR}/${vid}.info.json"
   remote_json=$(curl -fsSL "${PEERTUBE_URL}/api/v1/videos/${peertube_id}" \
@@ -259,6 +281,7 @@ upload_video() {
        -o -iname "${vid}.webp" \) | head -n 1 || true)
   if [[ -n "${thumb_path}" ]]; then
     thumb_path=$(realpath "${thumb_path}")
+    thumb_path=$(ensure_png_thumbnail "${thumb_path}" || true)
   fi
   info_json="${DOWNLOAD_DIR}/${vid}.info.json"
   title=$(jq -r '.title' < "${info_json}")
