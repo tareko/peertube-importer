@@ -176,7 +176,7 @@ sync_metadata() {
   remote_json=$(curl -fsSL "${PEERTUBE_URL}/api/v1/videos/${peertube_id}" \
     -H "Authorization: Bearer ${PEERTUBE_TOKEN}" 2>/dev/null || true)
   if [[ -n "${remote_json}" ]]; then
-    remote_thumb=$(jq -r '.thumbnailPath // .thumbnailUrl // empty' <<<"${remote_json}" 2>/dev/null || true)
+    remote_thumb=$(jq -r '.thumbnailPath // empty' <<<"${remote_json}" 2>/dev/null || true)
     remote_title=$(jq -r '.name // empty' <<<"${remote_json}" 2>/dev/null || true)
     remote_desc=$(jq -r '.description // empty' <<<"${remote_json}" 2>/dev/null || true)
   else
