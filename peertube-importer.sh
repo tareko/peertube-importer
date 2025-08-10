@@ -64,8 +64,6 @@ if [[ "$DOWNLOAD_ONLY" == false ]]; then
   : "${PEERTUBE_URL:?PEERTUBE_URL is not set}"
   : "${PEERTUBE_USER:?PEERTUBE_USER is not set}"
   : "${PEERTUBE_PASS:?PEERTUBE_PASS is not set}"
-  PEERTUBE_CLIENT_ID="${PEERTUBE_CLIENT_ID:-peertube-cli}"
-  PEERTUBE_CLIENT_SECRET="${PEERTUBE_CLIENT_SECRET:-peertube-cli-secret}"
 fi
 
 # 2) Local dirs & archive
@@ -83,7 +81,19 @@ if [[ "${USE_FIREFOX_COOKIES:-false}" == true ]]; then
 fi
 
 # 3) (Optional) authenticate once so future 'upload' calls omit creds
+PEERTUBE_CLIENT_ID=""
+PEERTUBE_CLIENT_SECRET=""
 PEERTUBE_TOKEN=""
+
+fetch_client_credentials() {
+  if [[ -z "${PEERTUBE_CLIENT_ID:-}" || -z "${PEERTUBE_CLIENT_SECRET:-}" ]]; then
+    local creds
+    creds=$(curl -fsSL "${PEERTUBE_URL}/api/v1/oauth-clients/local" 2>/dev/null || true)
+    PEERTUBE_CLIENT_ID=$(jq -r '.client_id // empty' <<<"${creds}")
+    PEERTUBE_CLIENT_SECRET=$(jq -r '.client_secret // empty' <<<"${creds}")
+  fi
+}
+
 fetch_peertube_token() {
   if [[ -z "${PEERTUBE_TOKEN:-}" ]]; then
     PEERTUBE_TOKEN=$(curl -fsSL "${PEERTUBE_URL}/api/v1/users/token" \
@@ -101,6 +111,7 @@ if [[ "$DOWNLOAD_ONLY" == false ]]; then
     -u "${PEERTUBE_URL}" \
     -U "${PEERTUBE_USER}" \
     --password "${PEERTUBE_PASS}"
+  fetch_client_credentials
   fetch_peertube_token
 fi
 
