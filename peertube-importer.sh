@@ -86,6 +86,12 @@ if [[ "$DOWNLOAD_ONLY" == false ]]; then
     -u "${PEERTUBE_URL}" \
     -U "${PEERTUBE_USER}" \
     --password "${PEERTUBE_PASS}"
+  PEERTUBE_TOKEN=$(curl -fsSL "${PEERTUBE_URL}/api/v1/users/token" \
+    --data-urlencode "client_id=peertube-cli" \
+    --data-urlencode "grant_type=password" \
+    --data-urlencode "username=${PEERTUBE_USER}" \
+    --data-urlencode "password=${PEERTUBE_PASS}" \
+    | jq -r '.access_token // empty' || true)
 fi
 
 
@@ -100,6 +106,15 @@ else
 fi
 
 # 5) Loop through each video
+
+# Upload a thumbnail to an existing PeerTube video via REST API
+upload_thumbnail() {
+  local peertube_id="$1" thumb_file="$2"
+  [[ -z "${PEERTUBE_TOKEN:-}" ]] && return
+  curl -fsSL -X POST "${PEERTUBE_URL}/api/v1/videos/${peertube_id}/thumbnail" \
+    -H "Authorization: Bearer ${PEERTUBE_TOKEN}" \
+    -F "thumbnailfile=@${thumb_file}" >/dev/null
+}
 
 # Update metadata/thumbnail of an already uploaded video if needed
 sync_metadata() {
@@ -142,6 +157,7 @@ sync_metadata() {
     update_args+=(--video-description "${description}")
     update=true
   fi
+  local thumb_updated=false
   if [[ -n "${thumb_path}" ]]; then
     local local_hash remote_hash="" remote_thumb_url
     local_hash=$(sha256sum "${thumb_path}" | awk '{print $1}')
@@ -154,13 +170,16 @@ sync_metadata() {
       remote_hash=$(curl -fsSL "${remote_thumb_url}" | sha256sum | awk '{print $1}' || true)
     fi
     if [[ -z "${remote_hash}" || "${local_hash}" != "${remote_hash}" ]]; then
-      update_args+=(--thumbnail "${thumb_path}")
-      update=true
+      echo "Uploading thumbnail for ${vid} (${peertube_id})"
+      upload_thumbnail "${peertube_id}" "${thumb_path}"
+      thumb_updated=true
     fi
   fi
   if [[ "${update}" == true ]]; then
     echo "Updating metadata for ${vid} (${peertube_id})"
     "${update_args[@]}"
+  elif [[ "${thumb_updated}" == true ]]; then
+    echo "Thumbnail updated for ${vid} (${peertube_id})"
   else
     echo "Metadata up to date for ${vid} (${peertube_id})"
   fi
