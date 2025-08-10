@@ -100,19 +100,47 @@ def main() -> None:
                 dt = read_upload_date(yt_id)
                 if not dt:
                     continue
+
+                with conn.cursor() as cur:
+                    if has_short_uuid:
+                        select_query = sql.SQL(
+                            "SELECT {col} FROM video WHERE uuid::text = %s OR short_uuid = %s OR id::text = %s"
+                        ).format(col=sql.Identifier(published_col))
+                        cur.execute(select_query, (pt_id, pt_id, pt_id))
+                    else:
+                        select_query = sql.SQL(
+                            "SELECT {col} FROM video WHERE uuid::text = %s OR id::text = %s"
+                        ).format(col=sql.Identifier(published_col))
+                        cur.execute(select_query, (pt_id, pt_id))
+
+                    row = cur.fetchone()
+                    if not row:
+                        print(f"No video matched ID {pt_id}")
+                        continue
+
+                    current_dt = row[0]
+                    if current_dt:
+                        if current_dt.tzinfo is None:
+                            current_dt = current_dt.replace(tzinfo=timezone.utc)
+                        else:
+                            current_dt = current_dt.astimezone(timezone.utc)
+                    if current_dt == dt:
+                        print(f"Video {pt_id} already set to {dt.isoformat()}, skipping")
+                        continue
+
                 print(f"Updating video {pt_id} to {dt.isoformat()}")
 
                 with conn.cursor() as cur:
                     if has_short_uuid:
-                        query = sql.SQL(
+                        update_query = sql.SQL(
                             "UPDATE video SET {col} = %s WHERE uuid::text = %s OR short_uuid = %s OR id::text = %s"
                         ).format(col=sql.Identifier(published_col))
-                        cur.execute(query, (dt, pt_id, pt_id, pt_id))
+                        cur.execute(update_query, (dt, pt_id, pt_id, pt_id))
                     else:
-                        query = sql.SQL(
+                        update_query = sql.SQL(
                             "UPDATE video SET {col} = %s WHERE uuid::text = %s OR id::text = %s"
                         ).format(col=sql.Identifier(published_col))
-                        cur.execute(query, (dt, pt_id, pt_id))
+                        cur.execute(update_query, (dt, pt_id, pt_id))
                     if cur.rowcount == 0:
                         print(f"No video matched ID {pt_id}")
                 conn.commit()
