@@ -134,7 +134,6 @@ def update_publish_date(
     except Exception as e:
         return False, str(e)
 
-
 def main() -> None:
     load_env()
     pt_url = os.getenv("PEERTUBE_URL", "")

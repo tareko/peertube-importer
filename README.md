@@ -43,6 +43,7 @@ authenticated downloads. The PeerTube variables are required when uploading and
 when running `set_publish_date.py`, which uses the PeerTube API and obtains an
 OAuth access token from the instance to update publication dates.
 
+
 ## Setting publication dates
 
 After uploading videos, run `set_publish_date.py` to update the PeerTube
