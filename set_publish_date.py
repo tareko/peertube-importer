@@ -40,12 +40,8 @@ def load_env(path: str = ".env") -> None:
         pass
 
 
-def read_upload_date(yt_id: str) -> datetime | None:
-    """Return the upload datetime from the video's info JSON, if available.
-
-    Prefers the `timestamp` field (seconds since the epoch) and falls back to
-    the older `upload_date` (``YYYYMMDD``) format when necessary.
-    """
+def read_timestamp(yt_id: str) -> datetime | None:
+    """Return the upload datetime from the video's info JSON `timestamp` field."""
     info_path = DOWNLOAD_DIR / f"{yt_id}.info.json"
     if not info_path.exists():
         return None
@@ -55,23 +51,13 @@ def read_upload_date(yt_id: str) -> datetime | None:
     except Exception:
         return None
 
-    # First attempt to parse the modern `timestamp` field provided by yt-dlp.
     ts = data.get("timestamp")
-    if ts is not None:
-        try:
-            return datetime.fromtimestamp(int(ts), tz=timezone.utc)
-        except (ValueError, OSError):
-            pass
-
-    # Fall back to the older string-based `upload_date` if `timestamp` is missing.
-    date_str = data.get("upload_date")
-    if not date_str:
+    if ts is None:
         return None
     try:
-        dt = datetime.strptime(date_str, "%Y%m%d").replace(tzinfo=timezone.utc)
-    except ValueError:
+        return datetime.fromtimestamp(int(ts), tz=timezone.utc)
+    except (ValueError, OSError):
         return None
-    return dt
 
 
 def column_exists(cur: psycopg2.extensions.cursor, table: str, column: str) -> bool:
@@ -111,7 +97,7 @@ def main() -> None:
                 if len(parts) != 2:
                     continue
                 yt_id, pt_id = parts
-                dt = read_upload_date(yt_id)
+                dt = read_timestamp(yt_id)
                 if not dt:
                     continue
 
