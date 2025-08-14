@@ -15,6 +15,7 @@ import urllib.request
 
 DOWNLOAD_DIR = pathlib.Path("./yt_downloads")
 MAP_FILE = pathlib.Path("./uploaded-map.txt")
+VIDEO_REPO = pathlib.Path("./peertube_videos.json")
 
 
 def load_env(path: str = ".env") -> dict:
@@ -87,6 +88,20 @@ def fetch_peertube_videos(url: str, token: str | None = None) -> list:
     return videos
 
 
+def load_video_repo(path: pathlib.Path) -> list:
+    """Load previously fetched PeerTube videos from ``path``."""
+    try:
+        with path.open() as f:
+            data = json.load(f)
+    except Exception:
+        return []
+    if isinstance(data, dict):
+        return data.get("data") or []
+    if isinstance(data, list):
+        return data
+    return []
+
+
 def read_existing_map(path: pathlib.Path) -> dict:
     existing = {}
     if path.exists():
@@ -117,7 +132,16 @@ def main() -> None:
     title_map = build_title_map(DOWNLOAD_DIR)
     existing_map = read_existing_map(MAP_FILE)
     token = get_token(pt_url, pt_user, pt_pass) if pt_url else None
-    videos = fetch_peertube_videos(pt_url, token) if pt_url else []
+
+    repo_path = pathlib.Path(env.get("PEERTUBE_VIDEOS_JSON", VIDEO_REPO))
+    videos = load_video_repo(repo_path)
+    if not videos and pt_url:
+        videos = fetch_peertube_videos(pt_url, token)
+        try:
+            with repo_path.open("w") as f:
+                json.dump(videos, f)
+        except Exception:
+            pass
 
     with MAP_FILE.open("a") as out:
         mapped_any = False
