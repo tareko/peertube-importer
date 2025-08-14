@@ -3,9 +3,10 @@
 
 Reads ``uploaded-map.txt`` for mappings between YouTube IDs and PeerTube video
 IDs, looks up the original YouTube upload dates from
-``yt_downloads/<youtube_id>.info.json`` and updates the ``originallyPublishedAt`` field
-of each video via the PeerTube REST API. If present, variables defined in a
-local ``.env`` file are loaded before falling back to the environment.
+``yt_downloads/<youtube_id>.info.json`` and updates both the
+``originallyPublishedAt`` and ``publishedAt`` fields of each video via the
+PeerTube REST API. If present, variables defined in a local ``.env`` file are
+loaded before falling back to the environment.
 """
 
 from __future__ import annotations
@@ -104,16 +105,20 @@ def get_video_info(url: str, vid: str, token: str | None) -> dict | None:
 def update_publish_date(
     url: str, vid: str, token: str | None, dt: datetime
 ) -> tuple[bool, str | None]:
-    """Update the video's publication date via the API.
+    """Update the video's publication dates via the API.
 
-    Returns ``(success, error_message)``; ``error_message`` is ``None`` on
-    success and otherwise contains details about the failure.
+    Sets both ``originallyPublishedAt`` and ``publishedAt`` to the supplied
+    datetime. Returns ``(success, error_message)``; ``error_message`` is
+    ``None`` on success and otherwise contains details about the failure.
     """
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
     payload = json.dumps(
-        {"originallyPublishedAt": dt.isoformat().replace("+00:00", "Z")}
+        {
+            "originallyPublishedAt": dt.isoformat().replace("+00:00", "Z"),
+            "publishedAt": dt.isoformat().replace("+00:00", "Z"),
+        }
     ).encode()
     req = urllib.request.Request(
         f"{url}/api/v1/videos/{vid}", data=payload, headers=headers, method="PUT"
@@ -155,15 +160,32 @@ def main() -> None:
             if not info:
                 print(f"No video matched ID {pt_id}")
                 continue
-            current = info.get("originallyPublishedAt") or info.get("originally_published_at")
-            if current:
+
+            current_orig = info.get("originallyPublishedAt") or info.get(
+                "originally_published_at"
+            )
+            current_pub = info.get("publishedAt") or info.get("published_at")
+
+            same_orig = False
+            same_pub = False
+            if current_orig:
                 try:
-                    current_dt = datetime.fromisoformat(current.replace("Z", "+00:00"))
+                    cur_dt = datetime.fromisoformat(current_orig.replace("Z", "+00:00"))
+                    if cur_dt == dt:
+                        same_orig = True
                 except ValueError:
-                    current_dt = None
-                if current_dt and current_dt == dt:
-                    print(f"Video {pt_id} already set to {dt.isoformat()}, skipping")
-                    continue
+                    pass
+            if current_pub:
+                try:
+                    cur_dt = datetime.fromisoformat(current_pub.replace("Z", "+00:00"))
+                    if cur_dt == dt:
+                        same_pub = True
+                except ValueError:
+                    pass
+
+            if same_orig and same_pub:
+                print(f"Video {pt_id} already set to {dt.isoformat()}, skipping")
+                continue
 
             print(f"Updating video {pt_id} to {dt.isoformat()}")
             success, error = update_publish_date(pt_url, pt_id, token, dt)

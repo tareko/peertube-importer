@@ -47,8 +47,9 @@ OAuth access token from the instance to update publication dates.
 ## Setting publication dates
 
 After uploading videos, run `set_publish_date.py` to update the PeerTube
-`originallyPublishedAt` field based on the original YouTube upload dates stored in the
-`yt_downloads/*.info.json` files and the mappings in `uploaded-map.txt`.
+`originallyPublishedAt` and `publishedAt` fields based on the original YouTube
+upload dates stored in the `yt_downloads/*.info.json` files and the mappings in
+`uploaded-map.txt`.
 
 ```bash
 ./set_publish_date.py
