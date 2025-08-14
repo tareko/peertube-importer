@@ -149,11 +149,12 @@ def main() -> None:
         for vid in videos:
             pt_id = vid.get("uuid") or vid.get("shortUUID") or str(vid.get("id"))
             yt_id = match_title(vid.get("name", ""), title_map)
-            if yt_id and yt_id not in existing_map and pt_id:
-                out.write(f"{yt_id} {pt_id}\n")
-                existing_map[yt_id] = pt_id
-                mapped_any = True
-                print(f"Mapped {yt_id} -> {pt_id}")
+            if yt_id and pt_id:
+                if yt_id not in existing_map:
+                    out.write(f"{yt_id} {pt_id}\n")
+                    existing_map[yt_id] = pt_id
+                    mapped_any = True
+                    print(f"Mapped {yt_id} -> {pt_id}")
             else:
                 unmatched.append(
                     (
