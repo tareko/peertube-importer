@@ -145,17 +145,30 @@ def main() -> None:
 
     with MAP_FILE.open("a") as out:
         mapped_any = False
+        unmatched = []
         for vid in videos:
             pt_id = vid.get("uuid") or vid.get("shortUUID") or str(vid.get("id"))
             yt_id = match_title(vid.get("name", ""), title_map)
-            if not pt_id or not yt_id or yt_id in existing_map:
-                continue
-            out.write(f"{yt_id} {pt_id}\n")
-            existing_map[yt_id] = pt_id
-            mapped_any = True
-            print(f"Mapped {yt_id} -> {pt_id}")
+            if yt_id and pt_id:
+                if yt_id not in existing_map:
+                    out.write(f"{yt_id} {pt_id}\n")
+                    existing_map[yt_id] = pt_id
+                    mapped_any = True
+                    print(f"Mapped {yt_id} -> {pt_id}")
+            else:
+                unmatched.append(
+                    (
+                        vid.get("shortUUID", ""),
+                        vid.get("uuid", ""),
+                        vid.get("name", ""),
+                    )
+                )
         if not mapped_any:
             print("No new videos were added.")
+        if unmatched:
+            print("Unmatched videos:")
+            for short, long_id, title in unmatched:
+                print(f"{short}\t{long_id}\t{title}")
 
 
 if __name__ == "__main__":
