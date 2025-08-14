@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
-"""Set PeerTube publication dates directly via PostgreSQL.
+"""Set PeerTube publication dates through the HTTP API.
 
-Reads `uploaded-map.txt` for mappings between YouTube IDs and PeerTube video
+Reads ``uploaded-map.txt`` for mappings between YouTube IDs and PeerTube video
 IDs, looks up the original YouTube upload dates from
-`yt_downloads/<youtube_id>.info.json`, and updates the publication date column
-(`published_at` or `publishedAt`, depending on version) in the PeerTube `video`
-table accordingly. Connection parameters are taken from the
-standard PostgreSQL environment variables (`PGHOST`, `PGPORT`, `PGDATABASE`,
-`PGUSER`, `PGPASSWORD`). If present, variables defined in a local `.env` file
-are loaded before falling back to the environment.
+``yt_downloads/<youtube_id>.info.json`` and updates the ``publishedAt`` field
+of each video via the PeerTube REST API. If present, variables defined in a
+local ``.env`` file are loaded before falling back to the environment.
 """
 
 from __future__ import annotations
@@ -18,8 +15,8 @@ import os
 import pathlib
 from datetime import datetime, timezone
 
-import psycopg2
-from psycopg2 import sql
+import urllib.parse
+import urllib.request
 
 DOWNLOAD_DIR = pathlib.Path("./yt_downloads")
 MAP_FILE = pathlib.Path("./uploaded-map.txt")
@@ -60,90 +57,90 @@ def read_upload_date(yt_id: str) -> datetime | None:
     return dt
 
 
-def column_exists(cur: psycopg2.extensions.cursor, table: str, column: str) -> bool:
-    """Return True if the given table contains the specified column."""
-    cur.execute(
-        "SELECT 1 FROM information_schema.columns WHERE table_name = %s AND column_name = %s",
-        (table, column),
+def get_token(url: str, user: str, password: str) -> str | None:
+    """Return an access token for the PeerTube API."""
+    if not user or not password:
+        return None
+    data = urllib.parse.urlencode(
+        {
+            "client_id": "peertube-cli",
+            "grant_type": "password",
+            "username": user,
+            "password": password,
+        }
+    ).encode()
+    req = urllib.request.Request(f"{url}/api/v1/users/token", data=data)
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return json.load(resp).get("access_token")
+    except Exception:
+        return None
+
+
+def get_video_info(url: str, vid: str, token: str | None) -> dict | None:
+    """Fetch video information from the PeerTube API."""
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(f"{url}/api/v1/videos/{vid}", headers=headers)
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return json.load(resp)
+    except Exception:
+        return None
+
+
+def update_publish_date(url: str, vid: str, token: str | None, dt: datetime) -> bool:
+    """Update the video's publication date. Returns True on success."""
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    payload = json.dumps({"publishedAt": dt.isoformat().replace("+00:00", "Z")}).encode()
+    req = urllib.request.Request(
+        f"{url}/api/v1/videos/{vid}", data=payload, headers=headers, method="PUT"
     )
-    return cur.fetchone() is not None
+    try:
+        with urllib.request.urlopen(req):
+            return True
+    except Exception:
+        return False
 
 
 def main() -> None:
     load_env()
-    conn = psycopg2.connect(
-        host=os.getenv("PGHOST", "localhost"),
-        port=os.getenv("PGPORT", "5432"),
-        dbname=os.getenv("PGDATABASE", "peertube"),
-        user=os.getenv("PGUSER"),
-        password=os.getenv("PGPASSWORD"),
-    )
-    with conn:
-        # Determine relevant columns once outside the update loop
-        with conn.cursor() as cur:
-            has_short_uuid = column_exists(cur, "video", "short_uuid")
-            if column_exists(cur, "video", "published_at"):
-                published_col = "published_at"
-            elif column_exists(cur, "video", "publishedAt"):
-                published_col = "publishedAt"
-            else:
-                raise RuntimeError(
-                    "Neither 'published_at' nor 'publishedAt' column exists in 'video' table"
-                )
+    pt_url = os.getenv("PEERTUBE_URL", "")
+    pt_user = os.getenv("PEERTUBE_USER", "")
+    pt_pass = os.getenv("PEERTUBE_PASS", "")
+    token = get_token(pt_url, pt_user, pt_pass) if pt_url else None
 
-        with MAP_FILE.open() as f:
-            for line in f:
-                parts = line.strip().split()
-                if len(parts) != 2:
+    with MAP_FILE.open() as f:
+        for line in f:
+            parts = line.strip().split()
+            if len(parts) != 2:
+                continue
+            yt_id, pt_id = parts
+            dt = read_upload_date(yt_id)
+            if not dt:
+                continue
+
+            info = get_video_info(pt_url, pt_id, token)
+            if not info:
+                print(f"No video matched ID {pt_id}")
+                continue
+            current = info.get("publishedAt") or info.get("published_at")
+            if current:
+                try:
+                    current_dt = datetime.fromisoformat(current.replace("Z", "+00:00"))
+                except ValueError:
+                    current_dt = None
+                if current_dt and current_dt == dt:
+                    print(f"Video {pt_id} already set to {dt.isoformat()}, skipping")
                     continue
-                yt_id, pt_id = parts
-                dt = read_upload_date(yt_id)
-                if not dt:
-                    continue
 
-                with conn.cursor() as cur:
-                    if has_short_uuid:
-                        select_query = sql.SQL(
-                            "SELECT {col} FROM video WHERE uuid::text = %s OR short_uuid = %s OR id::text = %s"
-                        ).format(col=sql.Identifier(published_col))
-                        cur.execute(select_query, (pt_id, pt_id, pt_id))
-                    else:
-                        select_query = sql.SQL(
-                            "SELECT {col} FROM video WHERE uuid::text = %s OR id::text = %s"
-                        ).format(col=sql.Identifier(published_col))
-                        cur.execute(select_query, (pt_id, pt_id))
+            print(f"Updating video {pt_id} to {dt.isoformat()}")
+            if not update_publish_date(pt_url, pt_id, token, dt):
+                print(f"Failed to update video {pt_id}")
 
-                    row = cur.fetchone()
-                    if not row:
-                        print(f"No video matched ID {pt_id}")
-                        continue
-
-                    current_dt = row[0]
-                    if current_dt:
-                        if current_dt.tzinfo is None:
-                            current_dt = current_dt.replace(tzinfo=timezone.utc)
-                        else:
-                            current_dt = current_dt.astimezone(timezone.utc)
-                    if current_dt == dt:
-                        print(f"Video {pt_id} already set to {dt.isoformat()}, skipping")
-                        continue
-
-                print(f"Updating video {pt_id} to {dt.isoformat()}")
-
-                with conn.cursor() as cur:
-                    if has_short_uuid:
-                        update_query = sql.SQL(
-                            "UPDATE video SET {col} = %s WHERE uuid::text = %s OR short_uuid = %s OR id::text = %s"
-                        ).format(col=sql.Identifier(published_col))
-                        cur.execute(update_query, (dt, pt_id, pt_id, pt_id))
-                    else:
-                        update_query = sql.SQL(
-                            "UPDATE video SET {col} = %s WHERE uuid::text = %s OR id::text = %s"
-                        ).format(col=sql.Identifier(published_col))
-                        cur.execute(update_query, (dt, pt_id, pt_id))
-                    if cur.rowcount == 0:
-                        print(f"No video matched ID {pt_id}")
-                conn.commit()
     print("Publication dates updated.")
 
 
