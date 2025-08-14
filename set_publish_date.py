@@ -2,7 +2,7 @@
 """Set PeerTube publication dates directly via PostgreSQL.
 
 Reads `uploaded-map.txt` for mappings between YouTube IDs and PeerTube video
-IDs, looks up the original YouTube upload dates from
+IDs, looks up the original YouTube timestamp from
 `yt_downloads/<youtube_id>.info.json`, and updates the publication date column
 (`published_at` or `publishedAt`, depending on version) in the PeerTube `video`
 table accordingly. Connection parameters are taken from the
@@ -41,7 +41,11 @@ def load_env(path: str = ".env") -> None:
 
 
 def read_upload_date(yt_id: str) -> datetime | None:
-    """Return the upload date from the video's info JSON, if available."""
+    """Return the upload datetime from the video's info JSON, if available.
+
+    Prefers the `timestamp` field (seconds since the epoch) and falls back to
+    the older `upload_date` (``YYYYMMDD``) format when necessary.
+    """
     info_path = DOWNLOAD_DIR / f"{yt_id}.info.json"
     if not info_path.exists():
         return None
@@ -50,6 +54,16 @@ def read_upload_date(yt_id: str) -> datetime | None:
             data = json.load(f)
     except Exception:
         return None
+
+    # First attempt to parse the modern `timestamp` field provided by yt-dlp.
+    ts = data.get("timestamp")
+    if ts is not None:
+        try:
+            return datetime.fromtimestamp(int(ts), tz=timezone.utc)
+        except (ValueError, OSError):
+            pass
+
+    # Fall back to the older string-based `upload_date` if `timestamp` is missing.
     date_str = data.get("upload_date")
     if not date_str:
         return None
