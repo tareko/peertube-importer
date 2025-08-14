@@ -37,8 +37,8 @@ def load_env(path: str = ".env") -> None:
         pass
 
 
-def read_upload_date(yt_id: str) -> datetime | None:
-    """Return the upload date from the video's info JSON, if available."""
+def read_upload_timestamp(yt_id: str) -> datetime | None:
+    """Return the upload timestamp from the video's info JSON, if available."""
     info_path = DOWNLOAD_DIR / f"{yt_id}.info.json"
     if not info_path.exists():
         return None
@@ -47,12 +47,12 @@ def read_upload_date(yt_id: str) -> datetime | None:
             data = json.load(f)
     except Exception:
         return None
-    date_str = data.get("upload_date")
-    if not date_str:
+    ts = data.get("timestamp")
+    if ts is None:
         return None
     try:
-        dt = datetime.strptime(date_str, "%Y%m%d").replace(tzinfo=timezone.utc)
-    except ValueError:
+        dt = datetime.fromtimestamp(int(ts), tz=timezone.utc)
+    except (TypeError, ValueError, OSError):
         return None
     return dt
 
@@ -147,7 +147,7 @@ def main() -> None:
             if len(parts) != 2:
                 continue
             yt_id, pt_id = parts
-            dt = read_upload_date(yt_id)
+            dt = read_upload_timestamp(yt_id)
             if not dt:
                 continue
 
