@@ -69,17 +69,23 @@ def get_token(url: str, user: str, password: str) -> str | None:
 
 
 def fetch_peertube_videos(url: str, token: str | None = None) -> list:
+    videos = []
+    start = 0
     headers = {}
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    req = urllib.request.Request(f"{url}/api/v1/videos", headers=headers)
-    with urllib.request.urlopen(req) as resp:
-        data = json.load(resp)
-    if isinstance(data, dict):
-        return data.get("data") or []
-    if isinstance(data, list):
-        return data
-    return []
+    while True:
+        req = urllib.request.Request(
+            f"{url}/api/v1/videos?start={start}&count=100", headers=headers
+        )
+        with urllib.request.urlopen(req) as resp:
+            data = json.load(resp)
+        items = data.get("data") or []
+        if not items:
+            break
+        videos.extend(items)
+        start += len(items)
+    return videos
 
 
 def load_video_repo(path: pathlib.Path) -> list:
