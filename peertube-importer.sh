@@ -284,7 +284,7 @@ upload_video() {
     --video-description "${description}"
   )
   if [[ -n "${thumb_path}" ]]; then
-    upload_args+=(--thumbnail "${thumb_path}")
+    upload_args+=(--thumbnail "${thumb_path}" --preview "${thumb_path}")
   fi
   upload_json=$("${upload_args[@]}")
   echo "${upload_json}"
