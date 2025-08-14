@@ -2,8 +2,8 @@
 """Set PeerTube publication dates through the HTTP API.
 
 Reads ``uploaded-map.txt`` for mappings between YouTube IDs and PeerTube video
-IDs, looks up the original YouTube timestamps from
-``yt_downloads/<youtube_id>.info.json`` and updates the ``publishedAt`` field
+IDs, looks up the original YouTube upload dates from
+``yt_downloads/<youtube_id>.info.json`` and updates the ``originallyPublishedAt`` field
 of each video via the PeerTube REST API. If present, variables defined in a
 local ``.env`` file are loaded before falling back to the environment.
 """
@@ -61,10 +61,21 @@ def get_token(url: str, user: str, password: str) -> str | None:
     """Return an access token for the PeerTube API."""
     if not user or not password:
         return None
+
+    try:
+        with urllib.request.urlopen(f"{url}/api/v1/oauth-clients/local") as resp:
+            client = json.load(resp)
+        client_id = client.get("client_id")
+        client_secret = client.get("client_secret")
+    except Exception:
+        return None
+
     data = urllib.parse.urlencode(
         {
-            "client_id": "peertube-cli",
+            "client_id": client_id,
+            "client_secret": client_secret,
             "grant_type": "password",
+            "response_type": "code",
             "username": user,
             "password": password,
         }
@@ -90,21 +101,38 @@ def get_video_info(url: str, vid: str, token: str | None) -> dict | None:
         return None
 
 
-def update_publish_date(url: str, vid: str, token: str | None, dt: datetime) -> bool:
-    """Update the video's publication date. Returns True on success."""
+def update_publish_date(
+    url: str, vid: str, token: str | None, dt: datetime
+) -> tuple[bool, str | None]:
+    """Update the video's publication date via the API.
+
+    Returns ``(success, error_message)``; ``error_message`` is ``None`` on
+    success and otherwise contains details about the failure.
+    """
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    payload = json.dumps({"publishedAt": dt.isoformat().replace("+00:00", "Z")}).encode()
+    payload = json.dumps(
+        {"originallyPublishedAt": dt.isoformat().replace("+00:00", "Z")}
+    ).encode()
     req = urllib.request.Request(
         f"{url}/api/v1/videos/{vid}", data=payload, headers=headers, method="PUT"
     )
     try:
         with urllib.request.urlopen(req):
-            return True
-    except Exception:
-        return False
-
+            return True, None
+    except urllib.error.HTTPError as e:
+        body = ""
+        try:
+            body = e.read().decode("utf-8", errors="ignore")
+        except Exception:
+            pass
+        detail = f"HTTP {e.code} {e.reason}"
+        if body:
+            detail += f": {body.strip()}"
+        return False, detail
+    except Exception as e:
+        return False, str(e)
 
 def main() -> None:
     load_env()
@@ -127,7 +155,7 @@ def main() -> None:
             if not info:
                 print(f"No video matched ID {pt_id}")
                 continue
-            current = info.get("publishedAt") or info.get("published_at")
+            current = info.get("originallyPublishedAt") or info.get("originally_published_at")
             if current:
                 try:
                     current_dt = datetime.fromisoformat(current.replace("Z", "+00:00"))
@@ -138,8 +166,9 @@ def main() -> None:
                     continue
 
             print(f"Updating video {pt_id} to {dt.isoformat()}")
-            if not update_publish_date(pt_url, pt_id, token, dt):
-                print(f"Failed to update video {pt_id}")
+            success, error = update_publish_date(pt_url, pt_id, token, dt)
+            if not success:
+                print(f"Failed to update video {pt_id}: {error}")
 
     print("Publication dates updated.")
 
