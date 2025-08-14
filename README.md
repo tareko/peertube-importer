@@ -51,7 +51,7 @@ database and update publication dates.
 ## Setting publication dates
 
 After uploading videos, run `set_publish_date.py` to update the PeerTube
-`published_at` field based on the original YouTube upload dates stored in the
+`published_at` field using the YouTube `timestamp` value stored in the
 `yt_downloads/*.info.json` files and the mappings in `uploaded-map.txt`.
 
 ```bash

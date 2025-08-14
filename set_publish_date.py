@@ -2,7 +2,7 @@
 """Set PeerTube publication dates directly via PostgreSQL.
 
 Reads `uploaded-map.txt` for mappings between YouTube IDs and PeerTube video
-IDs, looks up the original YouTube upload dates from
+IDs, looks up the original YouTube timestamp from
 `yt_downloads/<youtube_id>.info.json`, and updates the publication date column
 (`published_at` or `publishedAt`, depending on version) in the PeerTube `video`
 table accordingly. Connection parameters are taken from the
@@ -40,8 +40,8 @@ def load_env(path: str = ".env") -> None:
         pass
 
 
-def read_upload_date(yt_id: str) -> datetime | None:
-    """Return the upload date from the video's info JSON, if available."""
+def read_timestamp(yt_id: str) -> datetime | None:
+    """Return the upload datetime from the video's info JSON `timestamp` field."""
     info_path = DOWNLOAD_DIR / f"{yt_id}.info.json"
     if not info_path.exists():
         return None
@@ -50,14 +50,14 @@ def read_upload_date(yt_id: str) -> datetime | None:
             data = json.load(f)
     except Exception:
         return None
-    date_str = data.get("upload_date")
-    if not date_str:
+
+    ts = data.get("timestamp")
+    if ts is None:
         return None
     try:
-        dt = datetime.strptime(date_str, "%Y%m%d").replace(tzinfo=timezone.utc)
-    except ValueError:
+        return datetime.fromtimestamp(int(ts), tz=timezone.utc)
+    except (ValueError, OSError):
         return None
-    return dt
 
 
 def column_exists(cur: psycopg2.extensions.cursor, table: str, column: str) -> bool:
@@ -97,7 +97,7 @@ def main() -> None:
                 if len(parts) != 2:
                     continue
                 yt_id, pt_id = parts
-                dt = read_upload_date(yt_id)
+                dt = read_timestamp(yt_id)
                 if not dt:
                     continue
 
