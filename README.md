@@ -40,13 +40,14 @@ Copy `sample.env` to `.env` and set `BASE_DIR`, `PEERTUBE_URL`, `PEERTUBE_USER`
 and `PEERTUBE_PASS` before running the script. Set
 `USE_FIREFOX_COOKIES=true` if yt-dlp should use Firefox browser cookies for
 authenticated downloads. The PeerTube variables are required when uploading and
-when running `set_publish_date.py`, which uses the PeerTube API to update
-publication dates.
+when running `set_publish_date.py`, which uses the PeerTube API and obtains an
+OAuth access token from the instance to update publication dates.
+
 
 ## Setting publication dates
 
 After uploading videos, run `set_publish_date.py` to update the PeerTube
-`publishedAt` field based on the original YouTube upload dates stored in the
+`originallyPublishedAt` field based on the original YouTube upload dates stored in the
 `yt_downloads/*.info.json` files and the mappings in `uploaded-map.txt`.
 
 ```bash
