@@ -30,9 +30,11 @@ up to date.
 
 If videos already exist on the PeerTube instance, `match_peertube_videos.py`
 can attempt to link them with the downloaded YouTube files. The script reads
-metadata from `yt_downloads/*.info.json`, queries the configured PeerTube
-server and appends any matches to `uploaded-map.txt` as `<youtube_id>
-<peertube_id>` pairs.
+metadata from `yt_downloads/*.info.json` and a cached list of PeerTube videos
+stored in `peertube_videos.json` (override the path with
+`PEERTUBE_VIDEOS_JSON`). If the cache is missing, it fetches the list from the
+PeerTube API and saves it locally. Any matches are appended to
+`uploaded-map.txt` as `<youtube_id> <peertube_id>` pairs.
 
 ```bash
 ./match_peertube_videos.py
@@ -40,8 +42,10 @@ server and appends any matches to `uploaded-map.txt` as `<youtube_id>
 
 ## Configuration
 Copy `sample.env` to `.env` and set `BASE_DIR`, `PEERTUBE_URL`, `PEERTUBE_USER`
-and `PEERTUBE_PASS` before running the script. Set
-`USE_FIREFOX_COOKIES=true` if yt-dlp should use Firefox browser cookies for
+and `PEERTUBE_PASS` before running the script. Set `PEERTUBE_VIDEOS_JSON` if
+you want `match_peertube_videos.py` to read or write the cached list of
+PeerTube videos somewhere other than the default `peertube_videos.json`.
+`USE_FIREFOX_COOKIES=true` enables yt-dlp to use Firefox browser cookies for
 authenticated downloads. The PeerTube variables are only required when
 uploading. `set_publish_date.py` reads PostgreSQL connection settings from the
 `.env` file or the standard environment variables (`PGHOST`, `PGPORT`,
