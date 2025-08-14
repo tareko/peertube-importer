@@ -41,8 +41,18 @@ def load_env(path: str = ".env") -> None:
 
 
 def read_timestamp(yt_id: str) -> datetime | None:
-    """Return the upload datetime from the video's info JSON `timestamp` field."""
-    info_path = DOWNLOAD_DIR / f"{yt_id}.info.json"
+    """Return the upload datetime from the video's info JSON ``timestamp`` field.
+
+    Some YouTube IDs begin with a dash (e.g. ``-YHPmxwAtq0``). When such an ID
+    is used directly as part of a file path certain tools might interpret it as
+    an option rather than a filename.  To avoid any ambiguity we treat the ID as
+    a pure path component before appending the ``.info.json`` suffix.
+    """
+
+    # ``PurePosixPath`` strips any path components and returns only the final
+    # name, ensuring that leading dashes are handled as literal characters.
+    safe_id = pathlib.PurePosixPath(yt_id).name
+    info_path = DOWNLOAD_DIR / f"{safe_id}.info.json"
     if not info_path.exists():
         return None
     try:
