@@ -10,6 +10,7 @@ PeerTube titles to YouTube titles and appends any successful mappings to
 import difflib
 import json
 import pathlib
+import re
 import urllib.parse
 import urllib.request
 
@@ -46,7 +47,7 @@ def build_title_map(download_dir: pathlib.Path) -> dict:
         title = data.get("title")
         if not title:
             continue
-        key = title.lower()
+        key = normalize_title(title)
         title_map.setdefault(key, []).append(yt_id)
     return title_map
 
@@ -113,8 +114,14 @@ def read_existing_map(path: pathlib.Path) -> dict:
     return existing
 
 
+def normalize_title(title: str) -> str:
+    """Lowercase ``title`` and strip punctuation and whitespace."""
+    cleaned = re.sub(r"[\W_]+", "", title.lower())
+    return cleaned
+
+
 def match_title(title: str, title_map: dict) -> str | None:
-    key = title.lower()
+    key = normalize_title(title)
     if key in title_map:
         return title_map[key][0]
     matches = difflib.get_close_matches(key, title_map.keys(), n=1, cutoff=0.9)
