@@ -1,5 +1,8 @@
 .env
+__pycache__/
 uploaded-map.txt
+uploaded-map.txt.orig
 uploaded.txt
 yt-dlp-archive.txt
 yt_downloads
+peertube_videos.json

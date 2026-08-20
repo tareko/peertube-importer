@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import sys
 from datetime import datetime, timezone
 
 import psycopg2
@@ -80,6 +81,10 @@ def column_exists(cur: psycopg2.extensions.cursor, table: str, column: str) -> b
 
 
 def main() -> None:
+    # Optional argument: a YouTube video ID. When given, only the matching map
+    # entry is processed; otherwise every entry is checked (idempotent).
+    only_yt_id = sys.argv[1] if len(sys.argv) > 1 else None
+
     load_env()
     conn = psycopg2.connect(
         host=os.getenv("PGHOST", "localhost"),
@@ -87,6 +92,7 @@ def main() -> None:
         dbname=os.getenv("PGDATABASE", "peertube"),
         user=os.getenv("PGUSER"),
         password=os.getenv("PGPASSWORD"),
+        connect_timeout=5,
     )
     with conn:
         # Determine relevant columns once outside the update loop
@@ -107,6 +113,8 @@ def main() -> None:
                 if len(parts) != 2:
                     continue
                 yt_id, pt_id = parts
+                if only_yt_id is not None and yt_id != only_yt_id:
+                    continue
                 dt = read_timestamp(yt_id)
                 if not dt:
                     continue

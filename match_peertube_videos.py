@@ -51,11 +51,29 @@ def build_title_map(download_dir: pathlib.Path) -> dict:
     return title_map
 
 
+def fetch_client_credentials(url: str) -> tuple[str, str] | None:
+    """Fetch OAuth client credentials from the PeerTube instance."""
+    try:
+        with urllib.request.urlopen(f"{url}/api/v1/oauth-clients/local") as resp:
+            data = json.load(resp)
+        cid = data.get("client_id")
+        secret = data.get("client_secret")
+        if cid and secret:
+            return cid, secret
+    except Exception:
+        pass
+    return None
+
+
 def get_token(url: str, user: str, password: str) -> str | None:
     if not user or not password:
         return None
+    creds = fetch_client_credentials(url)
+    if not creds:
+        return None
     data = urllib.parse.urlencode({
-        "client_id": "peertube-cli",
+        "client_id": creds[0],
+        "client_secret": creds[1],
         "grant_type": "password",
         "username": user,
         "password": password,
